@@ -1,0 +1,85 @@
+import { Hono } from "hono";
+import { fetchRepoSnapshot, type RepoSnapshot } from "./github/snapshot.js";
+import { RepoError } from "./github/url.js";
+import { LlmError, createGeminiClient, type LlmClient } from "./llm/client.js";
+import { generateQuiz } from "./quiz/generate.js";
+import { snippetsFor, toPublicQuestions } from "./quiz/public.js";
+import { CATEGORIES, type Category } from "./quiz/types.js";
+import { MemorySessionStore, type SessionStore } from "./store/session.js";
+
+export type Deps = {
+  store: SessionStore;
+  /** 未指定なら初回利用時に Gemini クライアントを作る。 */
+  llm?: LlmClient;
+  fetchSnapshot: (url: string) => Promise<RepoSnapshot>;
+};
+
+const REPO_ERROR_STATUS = {
+  invalid_url: 400,
+  not_found: 404,
+  private: 403,
+  rate_limited: 429,
+  empty: 422,
+  upstream: 502,
+} as const;
+
+export function createApp(partial: Partial<Deps> = {}): Hono {
+  const deps: Deps = {
+    store: partial.store ?? new MemorySessionStore(),
+    llm: partial.llm,
+    fetchSnapshot: partial.fetchSnapshot ?? ((url) => fetchRepoSnapshot(url, { token: process.env.GITHUB_TOKEN })),
+  };
+  const getLlm = () => (deps.llm ??= createGeminiClient());
+
+  const app = new Hono();
+
+  app.onError((err, c) => {
+    if (err instanceof RepoError) {
+      return c.json({ error: err.code, message: err.message }, REPO_ERROR_STATUS[err.code]);
+    }
+    if (err instanceof LlmError) {
+      return c.json({ error: "llm", message: err.message }, 502);
+    }
+    console.error(err);
+    return c.json({ error: "internal", message: "サーバーエラーが発生しました" }, 500);
+  });
+
+  app.get("/api/health", (c) => c.json({ ok: true }));
+
+  app.post("/api/repo/preview", async (c) => {
+    const body = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
+    const snap = await deps.fetchSnapshot(String(body.url ?? ""));
+    return c.json({
+      owner: snap.owner,
+      repo: snap.repo,
+      branch: snap.branch,
+      description: snap.description,
+      files: snap.files.map((f) => ({ path: f.path, chars: f.content.length })),
+      skipped: snap.skipped,
+    });
+  });
+
+  app.post("/api/quiz", async (c) => {
+    const body = await c.req.json<{ url?: string; focus?: unknown }>().catch(() => ({}) as { url?: string; focus?: unknown });
+    const focus = Array.isArray(body.focus)
+      ? (body.focus.filter((f): f is Category => (CATEGORIES as readonly unknown[]).includes(f)) as Category[])
+      : [];
+    const snap = await deps.fetchSnapshot(String(body.url ?? ""));
+    const quiz = await generateQuiz(snap, getLlm(), { focus });
+    const snippets = snippetsFor(quiz, snap.files);
+    const session = await deps.store.create({ quiz, snippets });
+    return c.json({ sessionId: session.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });
+  });
+
+  app.get("/api/quiz/:id", async (c) => {
+    const session = await deps.store.get(c.req.param("id"));
+    if (!session) return c.json({ error: "not_found", message: "セッションが見つかりません" }, 404);
+    return c.json({
+      sessionId: session.id,
+      repo: session.quiz.repo,
+      questions: toPublicQuestions(session.quiz, session.snippets),
+    });
+  });
+
+  return app;
+}
