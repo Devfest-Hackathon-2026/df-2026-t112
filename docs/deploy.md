@@ -24,7 +24,19 @@ printf '%s' "<GitHub トークン(public_repo 読み取りのみ)>" | gcloud sec
 
 Cloud Run のサービスアカウントに `Secret Manager Secret Accessor` ロールを付けます。
 
-## 2. API を Cloud Run へ
+## 2. Firestore
+
+Firestore(Native モード)を `asia-northeast1` に作成し、次を設定します。
+
+```sh
+gcloud firestore databases create --location=asia-northeast1
+# 7 日で自動削除(sessions の expireAt)
+gcloud firestore fields ttls update expireAt --collection-group=sessions --enable-ttl
+# Cloud Run のサービスアカウントに読み書き権限
+gcloud projects add-iam-policy-binding <project>   --member=serviceAccount:<service-account> --role=roles/datastore.user
+```
+
+## 3. API を Cloud Run へ
 
 リポジトリのルートで実行します。
 
@@ -35,12 +47,12 @@ gcloud run deploy evc-api \
   --allow-unauthenticated \
   --max-instances 3 \
   --set-secrets GEMINI_API_KEY=gemini-api-key:latest,GITHUB_TOKEN=github-token:latest \
-  --set-env-vars GEMINI_MODEL=gemini-2.5-flash,RATE_LIMIT_PER_HOUR=10
+  --set-env-vars STORE=firestore,GEMINI_MODEL=gemini-2.5-flash,RATE_LIMIT_PER_HOUR=10
 ```
 
 `--source .` はルートの `Dockerfile` を使います。
 
-## 3. Web を Hosting へ
+## 4. Web を Hosting へ
 
 ```sh
 npm ci
@@ -56,6 +68,7 @@ curl https://<project>.web.app/api/health
 
 ## 注意
 
-- セッションと採点結果は、Firestore を設定する前(ステップ 9 まで)はインスタンスのメモリに置かれます。Cloud Run が複数インスタンスに分かれると、結果取得が 404 になることがあります。ステップ 9 の Firestore 保存で解消します。
+- `STORE=firestore` を付けないと、セッションと採点結果はインスタンスのメモリに置かれます。Cloud Run が複数インスタンスに分かれると、結果取得が 404 になります。
+- 匿名の全体集計は Firestore の `stats/global` に入り、`GET /api/stats` で読めます。
 - レート制限もインスタンス単位です。厳密な制限が必要なら Cloud Armor などを使ってください。
 - `--max-instances` は Gemini の課金を抑えるための上限です。
