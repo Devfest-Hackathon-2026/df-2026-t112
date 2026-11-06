@@ -22,7 +22,13 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
     throw new ApiError("network", "サーバーに接続できませんでした");
   }
   const data = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(data?.error ?? "unknown", data?.message ?? `エラーが発生しました (${res.status})`);
+  if (!res.ok) {
+    // API は失敗時も必ず JSON を返す。JSON でなければ API に届いていない(開発中は API の未起動が多い)
+    if (data === null && res.status >= 500) {
+      throw new ApiError("unreachable", "API サーバーに接続できません。API が起動しているか確認してください");
+    }
+    throw new ApiError(data?.error ?? "unknown", data?.message ?? `エラーが発生しました (${res.status})`);
+  }
   return data as T;
 }
 
