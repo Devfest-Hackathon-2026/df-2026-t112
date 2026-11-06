@@ -4,7 +4,7 @@ import { AuthButton } from "./components/AuthButton";
 import { QuizView } from "./components/QuizView";
 import { RepoForm } from "./components/RepoForm";
 import { ResultView } from "./components/ResultView";
-import type { Answers, GradeResult, QuizSession } from "./types";
+import type { Answers, Category, GradeResult, QuizSession } from "./types";
 
 type Phase =
   | { name: "input" }
@@ -18,11 +18,11 @@ export function App() {
   const [phase, setPhase] = useState<Phase>({ name: "input" });
   const [error, setError] = useState<string | null>(null);
 
-  const start = async (url: string) => {
+  const start = async (url: string, focus: Category[] = []) => {
     setError(null);
     setPhase({ name: "loading", url });
     try {
-      setPhase({ name: "quiz", session: await createQuiz(url), submitting: false });
+      setPhase({ name: "quiz", session: await createQuiz(url, focus), submitting: false });
     } catch (e) {
       setError(messageOf(e));
       setPhase({ name: "input" });
@@ -66,7 +66,12 @@ export function App() {
         />
       )}
       {phase.name === "result" && (
-        <ResultView session={phase.session} result={phase.result} onRestart={() => setPhase({ name: "input" })} />
+        <ResultView
+          session={phase.session}
+          result={phase.result}
+          onRestart={() => setPhase({ name: "input" })}
+          onRetry={(focus) => start(`https://github.com/${phase.session.repo.owner}/${phase.session.repo.repo}`, focus)}
+        />
       )}
     </main>
   );
