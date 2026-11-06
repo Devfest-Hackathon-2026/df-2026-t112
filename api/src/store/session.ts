@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { GradeResult } from "../grading/grade.js";
 import type { Quiz } from "../quiz/types.js";
 
 export type Session = {
@@ -7,12 +8,15 @@ export type Session = {
   quiz: Quiz;
   /** 問題ごとの該当コード。 */
   snippets: Record<string, string>;
+  /** 採点済みなら結果。再採点で Gemini を呼び直さないために保存する。 */
+  result?: GradeResult;
 };
 
 /** 保存先を差し替えられるようにする(メモリ → Firestore)。 */
 export interface SessionStore {
   create(data: Omit<Session, "id" | "createdAt">): Promise<Session>;
   get(id: string): Promise<Session | undefined>;
+  saveResult(id: string, result: GradeResult): Promise<void>;
 }
 
 export class MemorySessionStore implements SessionStore {
@@ -39,6 +43,11 @@ export class MemorySessionStore implements SessionStore {
       return undefined;
     }
     return s;
+  }
+
+  async saveResult(id: string, result: GradeResult): Promise<void> {
+    const s = await this.get(id);
+    if (s) s.result = result;
   }
 
   private evict() {

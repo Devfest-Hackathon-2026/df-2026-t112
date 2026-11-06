@@ -64,6 +64,35 @@ describe("POST /api/quiz", () => {
     expect((await a.request("/api/quiz/unknown")).status).toBe(404);
   });
 
+  it("grades answers once and caches the result", async () => {
+    let calls = 0;
+    const gradingLlm: LlmClient = {
+      async generateJson(req) {
+        calls++;
+        if (req.user.includes("次のリポジトリ")) return llm.generateJson(req);
+        if (req.user.includes("<item")) {
+          return { grades: [0, 1, 2].map((i) => ({ id: `q${16 + i}`, score: 1, feedback: "ok" })) };
+        }
+        return { summary: "総評" };
+      },
+    };
+    const a = createApp({ llm: gradingLlm, fetchSnapshot: async () => snap });
+    const created = await (await post(a, "/api/quiz", { url: "x" })).json();
+    expect(created.questions).toHaveLength(18);
+
+    const first = await post(a, `/api/quiz/${created.sessionId}/grade`, { answers: { q1: { choice: 0 } } });
+    expect(first.status).toBe(200);
+    const body = await first.json();
+    expect(body.questions).toHaveLength(18);
+    expect(body.summary).toBe("総評");
+
+    const before = calls;
+    const second = await post(a, `/api/quiz/${created.sessionId}/grade`, { answers: {} });
+    expect(await second.json()).toEqual(body);
+    expect(calls).toBe(before);
+    expect((await post(a, "/api/quiz/nope/grade", { answers: {} })).status).toBe(404);
+  });
+
   it("maps repo errors to status codes", async () => {
     const a = createApp({
       llm,
