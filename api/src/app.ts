@@ -9,9 +9,11 @@ import { snippetsFor, toPublicQuestions } from "./quiz/public.js";
 import { CATEGORIES, type Category } from "./quiz/types.js";
 import { rateLimit } from "./rateLimit.js";
 import { MemorySessionStore, type SessionStore } from "./store/session.js";
+import { MemoryStatsStore, type StatsStore } from "./store/stats.js";
 
 export type Deps = {
   store: SessionStore;
+  stats: StatsStore;
   /** 未指定なら初回利用時に Gemini クライアントを作る。 */
   llm?: LlmClient;
   fetchSnapshot: (url: string) => Promise<RepoSnapshot>;
@@ -29,6 +31,7 @@ const REPO_ERROR_STATUS = {
 export function createApp(partial: Partial<Deps> = {}): Hono {
   const deps: Deps = {
     store: partial.store ?? new MemorySessionStore(),
+    stats: partial.stats ?? new MemoryStatsStore(),
     llm: partial.llm,
     fetchSnapshot: partial.fetchSnapshot ?? ((url) => fetchRepoSnapshot(url, { token: process.env.GITHUB_TOKEN })),
   };
@@ -98,8 +101,12 @@ export function createApp(partial: Partial<Deps> = {}): Hono {
     const answers = sanitizeAnswers(body.answers);
     const result = await gradeQuiz(session.quiz, session.snippets, answers, getLlm());
     await deps.store.saveResult(session.id, result);
+    // 集計の失敗で採点結果を返せなくならないようにする
+    await deps.stats.record(result).catch((e) => console.error("stats record failed", e));
     return c.json(result);
   });
+
+  app.get("/api/stats", async (c) => c.json(await deps.stats.get()));
 
   return app;
 }
