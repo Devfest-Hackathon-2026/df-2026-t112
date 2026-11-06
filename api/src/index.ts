@@ -1,4 +1,12 @@
 import { serve } from "@hono/node-server";
+
+// ローカル開発用に、リポジトリ直下の .env を読む。無ければ何もしない(本番は環境変数を直接設定する)
+try {
+  process.loadEnvFile(new URL("../../.env", import.meta.url));
+} catch {
+  // .env が無い
+}
+
 import { createApp } from "./app.js";
 import { FirebaseAuthenticator } from "./auth.js";
 import { FirestoreSessionStore, FirestoreStatsStore } from "./store/firestore.js";
