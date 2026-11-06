@@ -92,6 +92,35 @@ describe("GitHub token forwarding", () => {
   });
 });
 
+describe("GET /api/weakness", () => {
+  it("requires login and aggregates only the caller's graded sessions", async () => {
+    const gradingLlm: LlmClient = {
+      async generateJson(req) {
+        if (req.user.includes("次のリポジトリ")) return llm.generateJson(req);
+        if (req.user.includes("<item")) return { grades: [] };
+        return { summary: "s" };
+      },
+    };
+    const app = createApp({ llm: gradingLlm, auth, fetchSnapshot: async () => snap });
+    const call = (path: string, user?: string, body?: unknown) =>
+      app.request(path, {
+        method: body ? "POST" : "GET",
+        headers: { "content-type": "application/json", ...(user ? { authorization: `Bearer token-${user}` } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+
+    expect((await call("/api/weakness")).status).toBe(401);
+
+    const created = await (await call("/api/quiz", "alice", { url: "u" })).json();
+    await call(`/api/quiz/${created.sessionId}/grade`, "alice", { answers: {} });
+
+    const alice = await (await call("/api/weakness", "alice")).json();
+    expect(alice.sessions).toBe(1);
+    expect(alice.weakest.length).toBeGreaterThan(0);
+    expect((await (await call("/api/weakness", "bob")).json()).sessions).toBe(0);
+  });
+});
+
 describe("session ownership", () => {
   it("hides a signed-in user's session from others, including grading", async () => {
     const { app, post } = setup();

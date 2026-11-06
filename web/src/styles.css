@@ -135,3 +135,7 @@ pre {
 
 .auth { margin-left: auto; display: flex; gap: 12px; align-items: center; }
 .auth button.link { margin: 0; }
+
+.compare { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.9rem; }
+.compare th, .compare td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.compare tr.weak td { color: var(--danger); font-weight: 600; }

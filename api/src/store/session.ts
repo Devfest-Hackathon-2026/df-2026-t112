@@ -19,6 +19,8 @@ export interface SessionStore {
   create(data: Omit<Session, "id" | "createdAt">): Promise<Session>;
   get(id: string): Promise<Session | undefined>;
   saveResult(id: string, result: GradeResult): Promise<void>;
+  /** ユーザーの採点済みセッションの結果(新しい順、最大 limit 件)。苦手分析に使う。 */
+  listResultsByUid(uid: string, limit: number): Promise<GradeResult[]>;
 }
 
 export class MemorySessionStore implements SessionStore {
@@ -50,6 +52,14 @@ export class MemorySessionStore implements SessionStore {
   async saveResult(id: string, result: GradeResult): Promise<void> {
     const s = await this.get(id);
     if (s) s.result = result;
+  }
+
+  async listResultsByUid(uid: string, limit: number): Promise<GradeResult[]> {
+    return [...this.sessions.values()]
+      .filter((s) => s.uid === uid && s.result && this.now() - s.createdAt <= this.ttlMs)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit)
+      .map((s) => s.result!);
   }
 
   private evict() {

@@ -5,6 +5,7 @@ import { RepoError } from "./github/url.js";
 import { LlmError, createGeminiClient, type LlmClient } from "./llm/client.js";
 import { gradeQuiz } from "./grading/grade.js";
 import type { Answer } from "./grading/scoring.js";
+import { analyzeWeakness } from "./grading/weakness.js";
 import { generateQuiz } from "./quiz/generate.js";
 import { snippetsFor, toPublicQuestions } from "./quiz/public.js";
 import { CATEGORIES, type Category } from "./quiz/types.js";
@@ -122,6 +123,13 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     // 集計の失敗で採点結果を返せなくならないようにする
     await deps.stats.record(result).catch((e) => console.error("stats record failed", e));
     return c.json(result);
+  });
+
+  // ログインユーザーの過去の結果から苦手カテゴリを出す
+  app.get("/api/weakness", async (c) => {
+    const user = c.get("user");
+    if (!user) return c.json({ error: "unauthorized", message: "ログインが必要です" }, 401);
+    return c.json(analyzeWeakness(await deps.store.listResultsByUid(user.uid, 20)));
   });
 
   app.get("/api/stats", async (c) => c.json(await deps.stats.get()));
