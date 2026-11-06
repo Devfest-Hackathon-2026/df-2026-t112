@@ -28,3 +28,22 @@ export type QuizSession = { sessionId: string; repo: RepoInfo; questions: Public
 
 export type Answer = { choice?: number; text?: string };
 export type Answers = Record<string, Answer>;
+
+export type QuestionResult = {
+  id: string;
+  category: Category;
+  type: "choice" | "free";
+  score: number;
+  correct: boolean;
+  userAnswer: string;
+  correctAnswer: string;
+  explanation: string;
+  feedback: string;
+};
+
+export type GradeResult = {
+  overall: number;
+  categories: Record<Category, number | null>;
+  summary: string;
+  questions: QuestionResult[];
+};

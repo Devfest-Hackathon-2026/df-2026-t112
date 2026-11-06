@@ -1,4 +1,4 @@
-import type { Category, QuizSession } from "./types";
+import type { Answers, Category, GradeResult, QuizSession } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -27,3 +27,6 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 
 export const createQuiz = (url: string, focus: Category[] = []) =>
   request<QuizSession>("/api/quiz", { url, focus });
+
+export const gradeQuiz = (sessionId: string, answers: Answers) =>
+  request<GradeResult>(`/api/quiz/${sessionId}/grade`, { answers });

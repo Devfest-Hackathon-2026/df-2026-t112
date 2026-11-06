@@ -1,10 +1,17 @@
 import { useState } from "react";
-import { ApiError, createQuiz } from "./api";
+import { ApiError, createQuiz, gradeQuiz } from "./api";
 import { QuizView } from "./components/QuizView";
 import { RepoForm } from "./components/RepoForm";
-import type { Answers, QuizSession } from "./types";
+import { ResultView } from "./components/ResultView";
+import type { Answers, GradeResult, QuizSession } from "./types";
 
-type Phase = { name: "input" } | { name: "loading"; url: string } | { name: "quiz"; session: QuizSession } | { name: "answered"; count: number };
+type Phase =
+  | { name: "input" }
+  | { name: "loading"; url: string }
+  | { name: "quiz"; session: QuizSession; submitting: boolean }
+  | { name: "result"; session: QuizSession; result: GradeResult };
+
+const messageOf = (e: unknown) => (e instanceof ApiError ? e.message : "予期しないエラーが発生しました");
 
 export function App() {
   const [phase, setPhase] = useState<Phase>({ name: "input" });
@@ -14,14 +21,25 @@ export function App() {
     setError(null);
     setPhase({ name: "loading", url });
     try {
-      setPhase({ name: "quiz", session: await createQuiz(url) });
+      setPhase({ name: "quiz", session: await createQuiz(url), submitting: false });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "予期しないエラーが発生しました");
+      setError(messageOf(e));
       setPhase({ name: "input" });
     }
   };
 
-  const submit = (answers: Answers) => setPhase({ name: "answered", count: Object.keys(answers).length });
+  const submit = async (session: QuizSession, answers: Answers) => {
+    setError(null);
+    setPhase({ name: "quiz", session, submitting: true });
+    try {
+      const result = await gradeQuiz(session.sessionId, answers);
+      window.scrollTo({ top: 0 });
+      setPhase({ name: "result", session, result });
+    } catch (e) {
+      setError(messageOf(e));
+      setPhase({ name: "quiz", session, submitting: false });
+    }
+  };
 
   return (
     <main>
@@ -37,8 +55,17 @@ export function App() {
           <p className="muted">{phase.url}</p>
         </div>
       )}
-      {phase.name === "quiz" && <QuizView session={phase.session} submitting={false} onSubmit={submit} />}
-      {phase.name === "answered" && <div className="card center">{phase.count} 問に回答しました(採点は次のステップで実装)</div>}
+      {phase.name === "quiz" && (
+        <QuizView
+          session={phase.session}
+          submitting={phase.submitting}
+          error={error}
+          onSubmit={(answers) => submit(phase.session, answers)}
+        />
+      )}
+      {phase.name === "result" && (
+        <ResultView session={phase.session} result={phase.result} onRestart={() => setPhase({ name: "input" })} />
+      )}
     </main>
   );
 }
