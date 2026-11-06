@@ -14,7 +14,7 @@ export function RepoForm({ onSubmit, error }: Props) {
     <form className="card repo-form" onSubmit={handle}>
       <h2>リポジトリの理解度をチェック</h2>
       <p className="muted">
-        GitHub の公開リポジトリ URL を入力すると、AI がコードを読んで 18 問のクイズを作ります。
+        GitHub のリポジトリ URL(公開、またはログイン中の自分の非公開リポジトリ)を入力すると、AI がコードを読んで 18 問のクイズを作ります。
       </p>
       <label htmlFor="repo-url">リポジトリ URL</label>
       <input
