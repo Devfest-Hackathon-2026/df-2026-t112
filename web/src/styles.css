@@ -132,3 +132,6 @@ pre {
 .review dt { font-weight: 600; margin-top: 8px; font-size: 0.85rem; color: var(--muted); }
 .review dd { margin: 2px 0 0; }
 .pre-wrap { white-space: pre-wrap; }
+
+.auth { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+.auth button.link { margin: 0; }

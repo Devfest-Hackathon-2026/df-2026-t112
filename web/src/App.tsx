@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiError, createQuiz, gradeQuiz } from "./api";
+import { AuthButton } from "./components/AuthButton";
 import { QuizView } from "./components/QuizView";
 import { RepoForm } from "./components/RepoForm";
 import { ResultView } from "./components/ResultView";
@@ -46,6 +47,7 @@ export function App() {
       <header className="app-header">
         <h1>EVC</h1>
         <span className="muted">Escape VibeCoder</span>
+        <AuthButton />
       </header>
 
       {phase.name === "input" && <RepoForm onSubmit={start} error={error} />}

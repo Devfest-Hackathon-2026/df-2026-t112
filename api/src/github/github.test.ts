@@ -67,6 +67,15 @@ describe("fetchRepoSnapshot", () => {
     expect(snap.branch).toBe("main");
   });
 
+  it("rejects private repos even with a server token, unless allowPrivate", async () => {
+    const fetchImpl = mockFetch({ default_branch: "main", description: null, private: true });
+    await expect(fetchRepoSnapshot("https://github.com/o/r", { fetchImpl, token: "t" })).rejects.toMatchObject({
+      code: "private",
+    });
+    const snap = await fetchRepoSnapshot("https://github.com/o/r", { fetchImpl, token: "t", allowPrivate: true });
+    expect(snap.files).toHaveLength(1);
+  });
+
   it("rejects private repos without a token", async () => {
     await expect(
       fetchRepoSnapshot("https://github.com/o/r", {

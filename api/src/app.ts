@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { authMiddleware, type AuthUser, type AuthVariables, type Authenticator } from "./auth.js";
 import { fetchRepoSnapshot, type RepoSnapshot } from "./github/snapshot.js";
 import { RepoError } from "./github/url.js";
 import { LlmError, createGeminiClient, type LlmClient } from "./llm/client.js";
@@ -16,7 +17,10 @@ export type Deps = {
   stats: StatsStore;
   /** 未指定なら初回利用時に Gemini クライアントを作る。 */
   llm?: LlmClient;
-  fetchSnapshot: (url: string) => Promise<RepoSnapshot>;
+  /** userToken はログイン済みユーザー本人の GitHub トークン。あれば非公開リポジトリも読む。 */
+  fetchSnapshot: (url: string, userToken?: string) => Promise<RepoSnapshot>;
+  /** 未指定なら認証なし(匿名のみ)。 */
+  auth?: Authenticator;
 };
 
 const REPO_ERROR_STATUS = {
@@ -28,16 +32,30 @@ const REPO_ERROR_STATUS = {
   upstream: 502,
 } as const;
 
-export function createApp(partial: Partial<Deps> = {}): Hono {
+export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVariables }> {
   const deps: Deps = {
     store: partial.store ?? new MemorySessionStore(),
     stats: partial.stats ?? new MemoryStatsStore(),
     llm: partial.llm,
-    fetchSnapshot: partial.fetchSnapshot ?? ((url) => fetchRepoSnapshot(url, { token: process.env.GITHUB_TOKEN })),
+    auth: partial.auth,
+    fetchSnapshot:
+      partial.fetchSnapshot ??
+      ((url, userToken) =>
+        userToken
+          ? fetchRepoSnapshot(url, { token: userToken, allowPrivate: true })
+          : fetchRepoSnapshot(url, { token: process.env.GITHUB_TOKEN })),
   };
   const getLlm = () => (deps.llm ??= createGeminiClient());
 
-  const app = new Hono();
+  /** ログインユーザーが作ったセッションは本人にだけ見せる(存在も明かさない)。 */
+  const findSession = async (id: string, user: AuthUser | null) => {
+    const session = await deps.store.get(id);
+    if (session?.uid && session.uid !== user?.uid) return undefined;
+    return session;
+  };
+
+  const app = new Hono<{ Variables: AuthVariables }>();
+  app.use("/api/*", authMiddleware(deps.auth));
 
   app.onError((err, c) => {
     if (err instanceof RepoError) {
@@ -54,7 +72,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono {
 
   app.post("/api/repo/preview", async (c) => {
     const body = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
-    const snap = await deps.fetchSnapshot(String(body.url ?? ""));
+    const snap = await deps.fetchSnapshot(String(body.url ?? ""), c.get("githubToken"));
     return c.json({
       owner: snap.owner,
       repo: snap.repo,
@@ -75,15 +93,15 @@ export function createApp(partial: Partial<Deps> = {}): Hono {
     const focus = Array.isArray(body.focus)
       ? (body.focus.filter((f): f is Category => (CATEGORIES as readonly unknown[]).includes(f)) as Category[])
       : [];
-    const snap = await deps.fetchSnapshot(String(body.url ?? ""));
+    const snap = await deps.fetchSnapshot(String(body.url ?? ""), c.get("githubToken"));
     const quiz = await generateQuiz(snap, getLlm(), { focus });
     const snippets = snippetsFor(quiz, snap.files);
-    const session = await deps.store.create({ quiz, snippets });
+    const session = await deps.store.create({ quiz, snippets, uid: c.get("user")?.uid });
     return c.json({ sessionId: session.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });
   });
 
   app.get("/api/quiz/:id", async (c) => {
-    const session = await deps.store.get(c.req.param("id"));
+    const session = await findSession(c.req.param("id"), c.get("user"));
     if (!session) return c.json({ error: "not_found", message: "セッションが見つかりません" }, 404);
     return c.json({
       sessionId: session.id,
@@ -93,7 +111,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono {
   });
 
   app.post("/api/quiz/:id/grade", async (c) => {
-    const session = await deps.store.get(c.req.param("id"));
+    const session = await findSession(c.req.param("id"), c.get("user"));
     if (!session) return c.json({ error: "not_found", message: "セッションが見つかりません" }, 404);
     if (session.result) return c.json(session.result);
 

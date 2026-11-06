@@ -22,6 +22,7 @@ export function serializeSession(s: Session) {
   return {
     createdAt: s.createdAt,
     expireAt: new Date(s.createdAt + RETENTION_MS),
+    uid: s.uid ?? null,
     repo: `${s.quiz.repo.owner}/${s.quiz.repo.repo}`,
     quiz: JSON.stringify(s.quiz),
     snippets: JSON.stringify(s.snippets),
@@ -33,6 +34,7 @@ export function deserializeSession(id: string, d: Record<string, unknown>): Sess
   return {
     id,
     createdAt: Number(d.createdAt),
+    uid: typeof d.uid === "string" ? d.uid : undefined,
     quiz: JSON.parse(String(d.quiz)),
     snippets: JSON.parse(String(d.snippets)),
     result: typeof d.result === "string" ? JSON.parse(d.result) : undefined,

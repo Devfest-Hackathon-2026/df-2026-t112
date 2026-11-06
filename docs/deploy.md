@@ -72,3 +72,23 @@ curl https://<project>.web.app/api/health
 - 匿名の全体集計は Firestore の `stats/global` に入り、`GET /api/stats` で読めます。
 - レート制限もインスタンス単位です。厳密な制限が必要なら Cloud Armor などを使ってください。
 - `--max-instances` は Gemini の課金を抑えるための上限です。
+
+## 非公開リポジトリ対応(GitHub App + Firebase Auth)
+
+ログインしたユーザー本人の GitHub トークン(user-to-server トークン)で、本人がアクセスできるリポジトリだけを読みます。クライアントから installation ID は受け取りません(他人の非公開リポジトリを読めてしまうため)。
+
+1. GitHub で GitHub App を作る。Repository permissions は `Contents: Read-only` と `Metadata: Read-only` のみ。Callback URL は Firebase が表示する `https://<project>.firebaseapp.com/__/auth/handler`。
+2. Firebase Console の Authentication で GitHub プロバイダを有効にし、GitHub App の Client ID / Client secret を入れる。
+3. 利用者は GitHub App を、読ませたいリポジトリにインストールする。
+4. Web のビルド時に `VITE_FIREBASE_*`(`.env.example` 参照)を設定する。未設定ならログイン機能は表示されない。
+5. Cloud Run に `AUTH=firebase` を追加する。
+
+```sh
+gcloud run services update evc-api --region asia-northeast1 --update-env-vars AUTH=firebase
+```
+
+注意:
+
+- GitHub トークンは `X-GitHub-Token` ヘッダーで API に渡り、保存もログ出力もしません。ブラウザ側もメモリ上にしか持たないため、リロードすると再ログインが必要です。
+- ログインユーザーが作ったセッションは、本人にしか見えません。
+- サーバー側の `GITHUB_TOKEN` は公開リポジトリ用のレート制限対策です。非公開リポジトリには使われません。
