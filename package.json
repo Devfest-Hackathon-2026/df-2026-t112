@@ -1,0 +1,11 @@
+{
+  "name": "evc",
+  "private": true,
+  "workspaces": ["web", "api"],
+  "scripts": {
+    "dev:web": "npm run dev -w web",
+    "dev:api": "npm run dev -w api",
+    "build": "npm run build -w web && npm run build -w api",
+    "typecheck": "npm run typecheck -w web && npm run typecheck -w api"
+  }
+}
