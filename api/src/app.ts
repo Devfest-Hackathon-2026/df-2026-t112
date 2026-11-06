@@ -7,6 +7,7 @@ import type { Answer } from "./grading/scoring.js";
 import { generateQuiz } from "./quiz/generate.js";
 import { snippetsFor, toPublicQuestions } from "./quiz/public.js";
 import { CATEGORIES, type Category } from "./quiz/types.js";
+import { rateLimit } from "./rateLimit.js";
 import { MemorySessionStore, type SessionStore } from "./store/session.js";
 
 export type Deps = {
@@ -60,6 +61,11 @@ export function createApp(partial: Partial<Deps> = {}): Hono {
       skipped: snap.skipped,
     });
   });
+
+  // 問題生成・採点は Gemini を呼ぶので、1 クライアントあたりの回数を絞る
+  const expensive = rateLimit({ limit: Number(process.env.RATE_LIMIT_PER_HOUR ?? 10), windowMs: 60 * 60 * 1000 });
+  app.post("/api/quiz", expensive);
+  app.post("/api/quiz/:id/grade", expensive);
 
   app.post("/api/quiz", async (c) => {
     const body = await c.req.json<{ url?: string; focus?: unknown }>().catch(() => ({}) as { url?: string; focus?: unknown });
