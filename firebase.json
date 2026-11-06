@@ -1,0 +1,13 @@
+{
+  "hosting": {
+    "public": "web/dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": { "serviceId": "evc-api", "region": "asia-northeast1" }
+      },
+      { "source": "**", "destination": "/index.html" }
+    ]
+  }
+}
