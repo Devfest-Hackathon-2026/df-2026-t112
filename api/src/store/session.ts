@@ -6,6 +6,8 @@ export type Session = {
   id: string;
   createdAt: number;
   quiz: Quiz;
+  /** ログインユーザーが作ったセッションの持ち主。匿名なら undefined。 */
+  uid?: string;
   /** 問題ごとの該当コード。 */
   snippets: Record<string, string>;
   /** 採点済みなら結果。再採点で Gemini を呼び直さないために保存する。 */

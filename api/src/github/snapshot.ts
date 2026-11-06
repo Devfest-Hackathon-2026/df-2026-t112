@@ -12,8 +12,13 @@ export type RepoSnapshot = {
 };
 
 export type FetchOptions = {
-  /** GitHub App の installation token など。指定時は非公開リポジトリも読める。 */
+  /** API 認証用トークン。レート制限の緩和や、ユーザー本人のトークンでの取得に使う。 */
   token?: string;
+  /**
+   * 非公開リポジトリを許可するか。token があるだけでは許可しない
+   * (サーバー側の共有トークンで他人に非公開リポジトリを読ませないため)。
+   */
+  allowPrivate?: boolean;
   fetchImpl?: typeof fetch;
 };
 
@@ -38,7 +43,7 @@ export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {
   const meta = await getJson<{ default_branch: string; description: string | null; private: boolean }>(
     `/repos/${owner}/${repo}`,
   );
-  if (meta.private && !opts.token) throw new RepoError("private", "非公開リポジトリは対応していません");
+  if (meta.private && !opts.allowPrivate) throw new RepoError("private", "非公開リポジトリは対応していません");
 
   const tree = await getJson<{ tree: { path: string; type: string; size?: number }[] }>(
     `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(meta.default_branch)}?recursive=1`,
