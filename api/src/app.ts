@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { fetchRepoSnapshot, type RepoSnapshot } from "./github/snapshot.js";
 import { RepoError } from "./github/url.js";
 import { LlmError, createGeminiClient, type LlmClient } from "./llm/client.js";
+import { gradeQuiz } from "./grading/grade.js";
+import type { Answer } from "./grading/scoring.js";
 import { generateQuiz } from "./quiz/generate.js";
 import { snippetsFor, toPublicQuestions } from "./quiz/public.js";
 import { CATEGORIES, type Category } from "./quiz/types.js";
@@ -81,5 +83,31 @@ export function createApp(partial: Partial<Deps> = {}): Hono {
     });
   });
 
+  app.post("/api/quiz/:id/grade", async (c) => {
+    const session = await deps.store.get(c.req.param("id"));
+    if (!session) return c.json({ error: "not_found", message: "セッションが見つかりません" }, 404);
+    if (session.result) return c.json(session.result);
+
+    const body = await c.req.json<{ answers?: unknown }>().catch(() => ({}) as { answers?: unknown });
+    const answers = sanitizeAnswers(body.answers);
+    const result = await gradeQuiz(session.quiz, session.snippets, answers, getLlm());
+    await deps.store.saveResult(session.id, result);
+    return c.json(result);
+  });
+
   return app;
+}
+
+function sanitizeAnswers(input: unknown): Record<string, Answer> {
+  const out: Record<string, Answer> = {};
+  if (typeof input !== "object" || input === null) return out;
+  for (const [id, v] of Object.entries(input)) {
+    if (typeof v !== "object" || v === null) continue;
+    const { choice, text } = v as { choice?: unknown; text?: unknown };
+    out[id] = {
+      choice: Number.isInteger(choice) ? (choice as number) : undefined,
+      text: typeof text === "string" ? text : undefined,
+    };
+  }
+  return out;
 }
