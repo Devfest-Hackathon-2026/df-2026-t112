@@ -108,3 +108,27 @@ pre {
 
 .hint { margin-top: 12px; font-size: 0.9rem; }
 .hint-text { margin: 0; padding: 8px 12px; background: var(--accent-soft); border-radius: 8px; }
+
+.overall { margin: 4px 0; }
+.overall-score { font-size: 3.5rem; font-weight: 700; color: var(--accent); }
+.overall-unit { color: var(--muted); }
+
+.radar { width: 100%; max-width: 360px; height: auto; }
+.radar-ring { fill: none; stroke: var(--border); }
+.radar-axis { stroke: var(--border); }
+.radar-area { fill: var(--accent); fill-opacity: 0.25; stroke: var(--accent); stroke-width: 2; }
+.radar-dot { fill: var(--accent); }
+.radar-label { fill: var(--text); font-size: 12px; }
+.radar-value { fill: var(--accent); font-weight: 700; }
+
+.summary { white-space: pre-wrap; margin: 0; }
+
+.review { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.review li { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.review summary { cursor: pointer; }
+.review .mark { display: inline-block; width: 1.4em; font-weight: 700; }
+.review li.ok .mark { color: #1e9e5a; }
+.review li.ng .mark { color: var(--danger); }
+.review dt { font-weight: 600; margin-top: 8px; font-size: 0.85rem; color: var(--muted); }
+.review dd { margin: 2px 0 0; }
+.pre-wrap { white-space: pre-wrap; }
