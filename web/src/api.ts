@@ -1,5 +1,5 @@
 import { authHeaders } from "./auth";
-import type { Answers, Category, GradeResult, QuizSession } from "./types";
+import type { Answers, Category, GlobalStats, GradeResult, QuizSession, Weakness } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -31,3 +31,6 @@ export const createQuiz = (url: string, focus: Category[] = []) =>
 
 export const gradeQuiz = (sessionId: string, answers: Answers) =>
   request<GradeResult>(`/api/quiz/${sessionId}/grade`, { answers });
+
+export const getStats = () => request<GlobalStats>("/api/stats");
+export const getWeakness = () => request<Weakness>("/api/weakness");

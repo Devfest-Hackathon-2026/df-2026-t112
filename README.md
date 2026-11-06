@@ -18,3 +18,37 @@ GitHub の公開リポジトリ URL を渡すと、Gemini がそのコードを�
 | 認証 | Firebase Auth(MVP 後) |
 | 配信 | Firebase Hosting |
 | 秘密情報 | Secret Manager |
+
+## 開発
+
+```sh
+npm install
+cp .env.example .env        # GEMINI_API_KEY などを設定
+
+npm run dev:api             # API  http://localhost:8080
+npm run dev:web             # Web  http://localhost:5173 (/api は API に転送)
+npm test                    # API のテスト
+npm run typecheck
+```
+
+Gemini / GitHub を使わずに画面だけ確認したいときは、API の代わりにモックを起動します。
+
+```sh
+npm run dev:mock -w api
+```
+
+問題の質を確かめるときは検証 CLI を使います。
+
+```sh
+npm run eval -w api -- https://github.com/owner/repo [--prompt-only] [--dump]
+```
+
+デプロイは [docs/deploy.md](docs/deploy.md) を参照してください。
+
+## 機能
+
+- 公開リポジトリ(ログインすれば自分の非公開リポジトリも)から、選択式 15 問 + 記述式 3 問を生成
+- 選択式は機械採点、記述式は Gemini がルーブリックで採点
+- 5 軸のレーダーチャート、総合スコア、AI の総評
+- 苦手カテゴリの分析と、重点的な再挑戦
+- 全利用者の匿名集計との比較

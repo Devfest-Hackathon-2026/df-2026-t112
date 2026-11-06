@@ -59,6 +59,17 @@ export class FirestoreSessionStore implements SessionStore {
     return snap.exists ? deserializeSession(id, snap.data()!) : undefined;
   }
 
+  async listResultsByUid(uid: string, limit: number): Promise<GradeResult[]> {
+    // uid の等価条件だけなら複合インデックス不要。並び替えはメモリで行う。
+    const snaps = await this.col().where("uid", "==", uid).limit(100).get();
+    return snaps.docs
+      .map((d) => deserializeSession(d.id, d.data()))
+      .filter((s) => s.result)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit)
+      .map((s) => s.result!);
+  }
+
   async saveResult(id: string, result: GradeResult): Promise<void> {
     await this.col()
       .doc(id)

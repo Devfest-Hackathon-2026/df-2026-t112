@@ -1,7 +1,13 @@
-import { CATEGORY_LABELS, type GradeResult, type QuizSession } from "../types";
+import { CATEGORY_LABELS, type Category, type GradeResult, type QuizSession } from "../types";
 import { RadarChart } from "./RadarChart";
+import { WeaknessPanel } from "./WeaknessPanel";
 
-type Props = { session: QuizSession; result: GradeResult; onRestart: () => void };
+type Props = {
+  session: QuizSession;
+  result: GradeResult;
+  onRestart: () => void;
+  onRetry: (focus: Category[]) => void;
+};
 
 function level(score: number): string {
   if (score >= 80) return "よく理解できています";
@@ -10,7 +16,7 @@ function level(score: number): string {
   return "もう一度コードを読み直しましょう";
 }
 
-export function ResultView({ session, result, onRestart }: Props) {
+export function ResultView({ session, result, onRestart, onRetry }: Props) {
   const qById = new Map(session.questions.map((q, i) => [q.id, { q, no: i + 1 }]));
 
   return (
@@ -31,6 +37,8 @@ export function ResultView({ session, result, onRestart }: Props) {
         <h2>総評</h2>
         <p className="summary">{result.summary}</p>
       </section>
+
+      <WeaknessPanel categories={result.categories} onRetry={onRetry} />
 
       <section className="card">
         <h2>問題ごとの結果</h2>

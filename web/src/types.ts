@@ -47,3 +47,15 @@ export type GradeResult = {
   summary: string;
   questions: QuestionResult[];
 };
+
+export type GlobalStats = { count: number; averages: Record<Category, number | null> };
+export type Weakness = { sessions: number; averages: Record<Category, number | null>; weakest: Category[] };
+
+export const WEAK_THRESHOLD = 70;
+
+/** 今回の結果から、苦手なカテゴリを低い順に最大 2 つ返す。 */
+export function weakestOf(categories: Record<Category, number | null>): Category[] {
+  return CATEGORIES.filter((c) => categories[c] !== null && categories[c]! < WEAK_THRESHOLD)
+    .sort((a, b) => categories[a]! - categories[b]!)
+    .slice(0, 2);
+}
