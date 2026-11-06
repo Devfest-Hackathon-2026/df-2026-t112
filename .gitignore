@@ -6,3 +6,4 @@ dist/
 *.log
 .firebase/
 .DS_Store
+eval-out/
