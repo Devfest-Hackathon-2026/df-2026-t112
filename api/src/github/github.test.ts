@@ -67,6 +67,23 @@ describe("fetchRepoSnapshot", () => {
     expect(snap.branch).toBe("main");
   });
 
+  it("strips comments from source files before they are shown or sent to the AI", async () => {
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/repos/o/r")) return new Response(JSON.stringify({ default_branch: "main", description: null, private: false }));
+      if (url.includes("/git/trees/")) {
+        return new Response(
+          JSON.stringify({ tree: [{ path: "src/a.ts", type: "blob", size: 80 }, { path: "README.md", type: "blob", size: 30 }] }),
+        );
+      }
+      return new Response(url.endsWith("README.md") ? "# Title\n<!-- keep -->" : "// answer: 3\nconst a = 1 + 2; // three");
+    }) as typeof fetch;
+    const snap = await fetchRepoSnapshot("https://github.com/o/r", { fetchImpl });
+    const byPath = Object.fromEntries(snap.files.map((f) => [f.path, f.content]));
+    expect(byPath["src/a.ts"]).toBe("const a = 1 + 2;");
+    expect(byPath["README.md"]).toBe("# Title\n<!-- keep -->");
+  });
+
   it("rejects private repos even with a server token, unless allowPrivate", async () => {
     const fetchImpl = mockFetch({ default_branch: "main", description: null, private: true });
     await expect(fetchRepoSnapshot("https://github.com/o/r", { fetchImpl, token: "t" })).rejects.toMatchObject({
