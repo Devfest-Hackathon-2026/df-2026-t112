@@ -1,5 +1,6 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { z } from "zod";
+import { withRetry } from "./retry.js";
 
 export type JsonRequest = {
   system: string;
@@ -60,7 +61,7 @@ export function describeGeminiError(e: unknown, model: string): string {
       return "Gemini の利用上限に達しました。しばらく待つか、プランの上限を確認してください";
     default:
       return typeof status === "number" && status >= 500
-        ? "Gemini 側で一時的なエラーが発生しました。しばらくしてからお試しください"
+        ? `Gemini 側で一時的なエラーが発生しました(HTTP ${status})。しばらくしてからお試しください`
         : "Gemini の呼び出しに失敗しました";
   }
 }
@@ -76,19 +77,26 @@ export function createGeminiClient(opts: { apiKey?: string; model?: string } = {
       const { $schema: _ignored, ...jsonSchema } = z.toJSONSchema(schema) as Record<string, unknown>;
       let res;
       try {
-        res = await ai.models.generateContent({
-          model,
-          contents: user,
-          config: {
-            // 応答が返らないまま待ち続けないようにする
-            httpOptions: { timeout: REQUEST_TIMEOUT_MS },
-            thinkingConfig: thinkingConfigFromEnv(),
-            systemInstruction: system,
-            responseMimeType: "application/json",
-            responseJsonSchema: jsonSchema,
-            temperature: temperature ?? 0.7,
+        res = await withRetry(
+          () =>
+            ai.models.generateContent({
+              model,
+              contents: user,
+              config: {
+                // 応答が返らないまま待ち続けないようにする
+                httpOptions: { timeout: REQUEST_TIMEOUT_MS },
+                thinkingConfig: thinkingConfigFromEnv(),
+                systemInstruction: system,
+                responseMimeType: "application/json",
+                responseJsonSchema: jsonSchema,
+                temperature: temperature ?? 0.7,
+              },
+            }),
+          {
+            onRetry: (e, attempt, delay) =>
+              console.warn(`gemini transient error (HTTP ${(e as { status?: number }).status}), retry ${attempt} in ${delay}ms`),
           },
-        });
+        );
       } catch (e) {
         console.error("gemini error:", e);
         throw new LlmError(describeGeminiError(e, model));
