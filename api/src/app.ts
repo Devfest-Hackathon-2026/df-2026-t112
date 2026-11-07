@@ -9,6 +9,7 @@ import { analyzeWeakness } from "./grading/weakness.js";
 import { generateQuiz } from "./quiz/generate.js";
 import { snippetsFor, toPublicQuestions } from "./quiz/public.js";
 import { CATEGORIES, type Category } from "./quiz/types.js";
+import { profileFromEnv, type Profile } from "./quiz/profile.js";
 import { rateLimit } from "./rateLimit.js";
 import { MemorySessionStore, type SessionStore } from "./store/session.js";
 import { MemoryStatsStore, type StatsStore } from "./store/stats.js";
@@ -22,6 +23,8 @@ export type Deps = {
   fetchSnapshot: (url: string, userToken?: string) => Promise<RepoSnapshot>;
   /** 未指定なら認証なし(匿名のみ)。 */
   auth?: Authenticator;
+  /** クイズの大きさ。未指定なら環境変数 QUIZ_PROFILE(既定は mini)。 */
+  profile: Profile;
 };
 
 const REPO_ERROR_STATUS = {
@@ -34,17 +37,19 @@ const REPO_ERROR_STATUS = {
 } as const;
 
 export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVariables }> {
+  const profile = partial.profile ?? profileFromEnv();
   const deps: Deps = {
     store: partial.store ?? new MemorySessionStore(),
     stats: partial.stats ?? new MemoryStatsStore(),
     llm: partial.llm,
     auth: partial.auth,
+    profile,
     fetchSnapshot:
       partial.fetchSnapshot ??
       ((url, userToken) =>
         userToken
-          ? fetchRepoSnapshot(url, { token: userToken, allowPrivate: true })
-          : fetchRepoSnapshot(url, { token: process.env.GITHUB_TOKEN })),
+          ? fetchRepoSnapshot(url, { token: userToken, allowPrivate: true, limits: profile.limits })
+          : fetchRepoSnapshot(url, { token: process.env.GITHUB_TOKEN, limits: profile.limits })),
   };
   const getLlm = () => (deps.llm ??= createGeminiClient());
 
@@ -94,8 +99,12 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     const focus = Array.isArray(body.focus)
       ? (body.focus.filter((f): f is Category => (CATEGORIES as readonly unknown[]).includes(f)) as Category[])
       : [];
+    const t0 = Date.now();
     const snap = await deps.fetchSnapshot(String(body.url ?? ""), c.get("githubToken"));
-    const quiz = await generateQuiz(snap, getLlm(), { focus });
+    const chars = snap.files.reduce((n, f) => n + f.content.length, 0);
+    console.log(`[quiz] ${snap.owner}/${snap.repo}: fetched ${snap.files.length} files, ${chars} chars in ${Date.now() - t0}ms`);
+    const quiz = await generateQuiz(snap, getLlm(), { focus, profile: deps.profile, log: (m) => console.log(`[quiz] ${m}`) });
+    console.log(`[quiz] done in ${Date.now() - t0}ms`);
     const snippets = snippetsFor(quiz, snap.files);
     const session = await deps.store.create({ quiz, snippets, uid: c.get("user")?.uid });
     return c.json({ sessionId: session.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });

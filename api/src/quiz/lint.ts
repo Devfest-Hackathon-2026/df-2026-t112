@@ -4,7 +4,7 @@ import { CATEGORIES, type Category, type Question } from "./types.js";
 export type LintIssue = { severity: "error" | "warn"; questionId?: string; message: string };
 
 /** 生成された問題の機械的な品質チェック。プロンプト調整の指標にも使う。 */
-export function lintQuestions(questions: Question[], files: RepoFile[]): LintIssue[] {
+export function lintQuestions(questions: Question[], files: RepoFile[], choicePerCategory = 3): LintIssue[] {
   const issues: LintIssue[] = [];
   const lineCount = new Map(files.map((f) => [f.path, f.content.split("\n").length]));
   const seen = new Set<string>();
@@ -34,7 +34,9 @@ export function lintQuestions(questions: Question[], files: RepoFile[]): LintIss
   const choice = questions.filter((q) => q.type === "choice");
   for (const c of CATEGORIES) {
     const n = choice.filter((q) => q.category === c).length;
-    if (n !== 3) issues.push({ severity: "warn", message: `カテゴリ ${c} の選択式が ${n} 問です(目安 3 問)` });
+    if (n !== choicePerCategory) {
+      issues.push({ severity: "warn", message: `カテゴリ ${c} の選択式が ${n} 問です(目安 ${choicePerCategory} 問)` });
+    }
   }
   if (!questions.some((q) => q.difficulty === 3)) issues.push({ severity: "warn", message: "難易度 3 の問題がありません" });
   return issues;

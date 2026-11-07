@@ -1,9 +1,16 @@
-export const LIMITS = {
+export type Limits = {
+  maxFiles: number;
+  maxFileBytes: number;
+  maxCharsPerFile: number;
+  maxTotalChars: number;
+};
+
+export const LIMITS: Limits = {
   maxFiles: 40,
   maxFileBytes: 100_000,
   maxCharsPerFile: 8_000,
   maxTotalChars: 120_000,
-} as const;
+};
 
 const CODE_EXT = new Set([
   "ts", "tsx", "js", "jsx", "mjs", "cjs", "vue", "svelte", "py", "rb", "go", "rs", "java", "kt",
@@ -26,12 +33,12 @@ function ext(path: string): string {
   return i < 0 ? "" : name.slice(i + 1).toLowerCase();
 }
 
-export function isCandidate(entry: TreeEntry): boolean {
+export function isCandidate(entry: TreeEntry, limits: Limits = LIMITS): boolean {
   const parts = entry.path.split("/");
   const name = parts[parts.length - 1];
   if (parts.slice(0, -1).some((d) => SKIP_DIRS.has(d))) return false;
   if (SKIP_FILE_RE.test(name)) return false;
-  if (entry.size === 0 || entry.size > LIMITS.maxFileBytes) return false;
+  if (entry.size === 0 || entry.size > limits.maxFileBytes) return false;
   return KEY_FILES.has(name) || CODE_EXT.has(ext(entry.path));
 }
 
@@ -48,16 +55,16 @@ export function priority(entry: TreeEntry): number {
   return p;
 }
 
-export function selectFiles(tree: TreeEntry[]): { selected: TreeEntry[]; skipped: number } {
+export function selectFiles(tree: TreeEntry[], limits: Limits = LIMITS): { selected: TreeEntry[]; skipped: number } {
   const candidates = tree
-    .filter(isCandidate)
+    .filter((e) => isCandidate(e, limits))
     .sort((a, b) => priority(a) - priority(b) || a.path.localeCompare(b.path));
   const selected: TreeEntry[] = [];
   let budget = 0;
   for (const e of candidates) {
-    if (selected.length >= LIMITS.maxFiles) break;
-    const est = Math.min(e.size, LIMITS.maxCharsPerFile);
-    if (budget + est > LIMITS.maxTotalChars) continue;
+    if (selected.length >= limits.maxFiles) break;
+    const est = Math.min(e.size, limits.maxCharsPerFile);
+    if (budget + est > limits.maxTotalChars) continue;
     selected.push(e);
     budget += est;
   }

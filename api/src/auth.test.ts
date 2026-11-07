@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import type { Authenticator } from "./auth.js";
 import type { RepoSnapshot } from "./github/snapshot.js";
-import type { LlmClient } from "./llm/client.js";
-import { CATEGORIES, type GeneratedQuestion } from "./quiz/types.js";
+import { PROFILES } from "./quiz/profile.js";
+import { fakeLlm } from "./testing/fake-llm.js";
 
 const snap: RepoSnapshot = {
   owner: "o",
@@ -14,29 +14,7 @@ const snap: RepoSnapshot = {
   skipped: 0,
 };
 
-const q = (i: number, type: "choice" | "free"): GeneratedQuestion => ({
-  type,
-  category: CATEGORIES[i % 5],
-  difficulty: 1,
-  question: `Q${i}`,
-  codeRef: { path: "a.ts", startLine: 1, endLine: 1 },
-  choices: type === "choice" ? ["A", "B", "C", "D"] : [],
-  answerIndex: 0,
-  rubric: type === "free" ? "- r" : "",
-  hint: "h",
-  explanation: "e",
-});
-
-const llm: LlmClient = {
-  async generateJson() {
-    return {
-      questions: [
-        ...Array.from({ length: 15 }, (_, i) => q(i, "choice")),
-        ...Array.from({ length: 3 }, (_, i) => q(i, "free")),
-      ],
-    };
-  },
-};
+const llm = fakeLlm();
 
 /** "token-alice" → uid alice。それ以外は検証失敗。 */
 const auth: Authenticator = {
@@ -51,6 +29,7 @@ function setup() {
   const app = createApp({
     llm,
     auth,
+    profile: PROFILES.full,
     fetchSnapshot: async (_url, userToken) => {
       seen.push(userToken);
       return snap;
@@ -94,14 +73,8 @@ describe("GitHub token forwarding", () => {
 
 describe("GET /api/weakness", () => {
   it("requires login and aggregates only the caller's graded sessions", async () => {
-    const gradingLlm: LlmClient = {
-      async generateJson(req) {
-        if (req.user.includes("次のリポジトリ")) return llm.generateJson(req);
-        if (req.user.includes("<item")) return { grades: [] };
-        return { summary: "s" };
-      },
-    };
-    const app = createApp({ llm: gradingLlm, auth, fetchSnapshot: async () => snap });
+    const gradingLlm = fakeLlm(async (req) => (req.user.includes("<item") ? { grades: [] } : { summary: "s" }));
+    const app = createApp({ llm: gradingLlm, auth, profile: PROFILES.full, fetchSnapshot: async () => snap });
     const call = (path: string, user?: string, body?: unknown) =>
       app.request(path, {
         method: body ? "POST" : "GET",
