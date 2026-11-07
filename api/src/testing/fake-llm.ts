@@ -34,13 +34,13 @@ export function fakeQuizResponse(system: string): { questions: GeneratedQuestion
   };
 }
 
-/** 出題だけに応答する偽の LLM。それ以外(採点・総評)は other に任せる。 */
+/** 出題には指示どおりの数で応答する偽の LLM。採点・総評(1 回の呼び出し)は other に任せる。 */
 export function fakeLlm(other?: LlmClient["generateJson"]): LlmClient {
   return {
     async generateJson(req) {
       if (req.system.includes("このリクエストで作る問題")) return fakeQuizResponse(req.system);
       if (other) return other(req);
-      return { summary: "総評です" };
+      return { grades: [], summary: "総評です" };
     },
   };
 }

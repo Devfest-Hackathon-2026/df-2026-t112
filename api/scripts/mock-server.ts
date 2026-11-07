@@ -55,16 +55,15 @@ const llm: LlmClient = {
         ],
       };
     }
-    if (req.user.includes("<item")) {
-      return {
-        grades: [...req.user.matchAll(/<item id="(q\d+)">/g)].map((m, i) => ({
-          id: m[1],
-          score: [1, 0.5, 0][i % 3],
-          feedback: "要点の一部を説明できています。",
-        })),
-      };
-    }
-    return { summary: "これはモックの総評です。コード読解は良好ですが、エラー処理の説明が弱めでした。" };
+    // 採点と総評は 1 回の呼び出しで返す
+    return {
+      grades: [...req.user.matchAll(/<item id="(q\d+)">/g)].map((m, i) => ({
+        id: m[1],
+        score: [1, 0.5, 0][i % 3],
+        feedback: "要点の一部を説明できています。",
+      })),
+      summary: "これはモックの総評です。コード読解は良好ですが、エラー処理の説明が弱めでした。",
+    };
   },
 };
 
