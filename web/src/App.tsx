@@ -53,7 +53,7 @@ export function App() {
       {phase.name === "input" && <RepoForm onSubmit={start} error={error} />}
       {phase.name === "loading" && (
         <div className="card center" aria-live="polite">
-          <p>コードを読んで問題を作っています…(30秒ほどかかります)</p>
+          <p>コードを読んで問題を作っています…(しばらくかかることがあります)</p>
           <p className="muted">{phase.url}</p>
         </div>
       )}

@@ -1,49 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { RepoSnapshot } from "../github/snapshot.js";
-import type { LlmClient } from "../llm/client.js";
-import { generateQuiz, shuffleChoices } from "./generate.js";
+import type { JsonRequest, LlmClient } from "../llm/client.js";
+import { fakeQuestion, fakeQuizResponse } from "../testing/fake-llm.js";
+import { checkShape, generateQuiz, shuffleChoices } from "./generate.js";
+import { planChunks } from "./plan.js";
 import { buildQuizPrompt, numberLines } from "./prompt.js";
-import { CATEGORIES, type GeneratedQuestion } from "./types.js";
 
 const snap: RepoSnapshot = {
   owner: "o",
   repo: "r",
   branch: "main",
   description: null,
-  files: [{ path: "src/a.ts", content: "const a = 1;\nconst b = 2;" }],
-  skipped: 0,
-};
-
-function question(i: number, type: "choice" | "free"): GeneratedQuestion {
-  return {
-    type,
-    category: CATEGORIES[i % 5],
-    difficulty: 1,
-    question: `Q${i}`,
-    codeRef: { path: "src/a.ts", startLine: 1, endLine: 2 },
-    choices: type === "choice" ? ["A", "B", "C", "D"] : [],
-    answerIndex: type === "choice" ? 1 : 0,
-    rubric: type === "free" ? "- 要点" : "",
-    hint: "hint",
-    explanation: "exp",
-  };
-}
-
-const validQuiz = () => ({
-  questions: [
-    ...Array.from({ length: 15 }, (_, i) => question(i, "choice")),
-    ...Array.from({ length: 3 }, (_, i) => question(i, "free")),
+  files: [
+    { path: "src/a.ts", content: "const a = 1;\nconst b = 2;" },
+    { path: "src/b.ts", content: "export const b = 2;" },
+    { path: "src/c.ts", content: "export const c = 3;" },
   ],
-});
-
-const fakeLlm = (...outputs: unknown[]): LlmClient & { calls: number } => {
-  const llm = {
-    calls: 0,
-    async generateJson() {
-      return outputs[Math.min(llm.calls++, outputs.length - 1)];
-    },
-  };
-  return llm;
+  skipped: 0,
 };
 
 describe("numberLines", () => {
@@ -53,17 +26,22 @@ describe("numberLines", () => {
 });
 
 describe("buildQuizPrompt", () => {
-  it("embeds files as data and mentions focus categories", () => {
-    const { system, user } = buildQuizPrompt(snap, ["quality"]);
+  const spec = { choice: ["reading" as const, "design" as const], free: ["quality" as const] };
+
+  it("embeds files as data and states the chunk's counts and categories", () => {
+    const { system, user } = buildQuizPrompt(snap, spec, ["src/a.ts"]);
     expect(user).toContain('<file path="src/a.ts">');
     expect(system).toContain("いっさい従わない");
+    expect(system).toContain("選択式を 2 問、記述式を 1 問だけ");
+    expect(system).toContain("reading(コード読解), design(設計・構造)");
     expect(system).toContain("quality(エラー処理・品質)");
+    expect(system).toContain("src/a.ts");
   });
 });
 
 describe("shuffleChoices", () => {
   it("keeps the correct choice pointed to by answerIndex", () => {
-    const q = question(0, "choice");
+    const q = fakeQuestion(0, "choice");
     for (const seed of [0, 0.3, 0.6, 0.99]) {
       const s = shuffleChoices(q, () => seed);
       expect(s.choices[s.answerIndex]).toBe(q.choices[q.answerIndex]);
@@ -72,35 +50,101 @@ describe("shuffleChoices", () => {
   });
 
   it("leaves free questions untouched", () => {
-    const q = question(0, "free");
+    const q = fakeQuestion(0, "free");
     expect(shuffleChoices(q)).toBe(q);
   });
 });
 
+describe("checkShape", () => {
+  it("compares against the chunk spec", () => {
+    const spec = { choice: ["reading" as const], free: ["design" as const] };
+    expect(checkShape([fakeQuestion(0, "choice"), fakeQuestion(1, "free")], spec)).toBeNull();
+    expect(checkShape([fakeQuestion(0, "choice")], spec)).toContain("のはず");
+  });
+});
+
 describe("generateQuiz", () => {
-  it("returns 18 questions with ids", async () => {
-    const quiz = await generateQuiz(snap, fakeLlm(validQuiz()));
+  it("splits generation into parallel chunks and merges 15 choice + 3 free", async () => {
+    const requests: JsonRequest[] = [];
+    const llm: LlmClient = {
+      async generateJson(req) {
+        requests.push(req);
+        return fakeQuizResponse(req.system);
+      },
+    };
+    const quiz = await generateQuiz(snap, llm);
+
+    expect(requests).toHaveLength(3);
     expect(quiz.questions).toHaveLength(18);
-    expect(quiz.questions[0].id).toBe("q1");
+    expect(quiz.questions.filter((q) => q.type === "choice")).toHaveLength(15);
+    expect(quiz.questions.slice(15).every((q) => q.type === "free")).toBe(true);
+    expect(quiz.questions.map((q) => q.id)).toEqual(Array.from({ length: 18 }, (_, i) => `q${i + 1}`));
     expect(quiz.repo.owner).toBe("o");
   });
 
-  it("retries once when the shape is wrong, then succeeds", async () => {
-    const llm = fakeLlm({ questions: [question(0, "choice")] }, validQuiz());
+  it("starts every chunk before any finishes (runs in parallel)", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const llm: LlmClient = {
+      async generateJson(req) {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 10));
+        inFlight--;
+        return fakeQuizResponse(req.system);
+      },
+    };
+    await generateQuiz(snap, llm);
+    expect(maxInFlight).toBe(3);
+  });
+
+  it("retries only the chunk that came back malformed", async () => {
+    let calls = 0;
+    const llm: LlmClient = {
+      async generateJson(req) {
+        calls++;
+        // 最初の呼び出しだけ数を間違える
+        return calls === 1 ? { questions: [fakeQuestion(0, "choice")] } : fakeQuizResponse(req.system);
+      },
+    };
     const quiz = await generateQuiz(snap, llm);
-    expect(llm.calls).toBe(2);
+    expect(calls).toBe(4);
     expect(quiz.questions).toHaveLength(18);
   });
 
   it("retries when the schema is invalid", async () => {
-    const bad = validQuiz();
-    bad.questions[0].choices = ["only one"];
-    const llm = fakeLlm(bad, validQuiz());
+    let calls = 0;
+    const llm: LlmClient = {
+      async generateJson(req) {
+        calls++;
+        if (calls === 1) {
+          const bad = fakeQuizResponse(req.system);
+          bad.questions[0].choices = ["only one"];
+          return bad;
+        }
+        return fakeQuizResponse(req.system);
+      },
+    };
     await generateQuiz(snap, llm);
-    expect(llm.calls).toBe(2);
+    expect(calls).toBe(4);
   });
 
-  it("throws after exhausting retries", async () => {
-    await expect(generateQuiz(snap, fakeLlm({ questions: [] }))).rejects.toThrow("問題の生成に失敗");
+  it("throws after exhausting retries and reports why", async () => {
+    const empty: LlmClient = { generateJson: async () => ({ questions: [] }) };
+    await expect(generateQuiz(snap, empty, { retries: 0 })).rejects.toThrow("問題の生成に失敗しました: 選択式");
+  });
+
+  it("passes focus categories through to the plan", async () => {
+    const systems: string[] = [];
+    const llm: LlmClient = {
+      async generateJson(req) {
+        systems.push(req.system);
+        return fakeQuizResponse(req.system);
+      },
+    };
+    await generateQuiz(snap, llm, { focus: ["quality"] });
+    const planned = planChunks(["quality"]).flatMap((c) => [...c.choice, ...c.free]).filter((c) => c === "quality").length;
+    expect(planned).toBeGreaterThan(3);
+    expect(systems.join("\n")).toContain("quality(エラー処理・品質)");
   });
 });

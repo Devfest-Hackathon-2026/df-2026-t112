@@ -11,6 +11,7 @@ import { fetchRepoSnapshot } from "../src/github/snapshot.js";
 import { createGeminiClient } from "../src/llm/client.js";
 import { generateQuiz } from "../src/quiz/generate.js";
 import { lintQuestions, summarize } from "../src/quiz/lint.js";
+import { planChunks } from "../src/quiz/plan.js";
 import { buildQuizPrompt } from "../src/quiz/prompt.js";
 
 try {
@@ -36,13 +37,14 @@ for (const url of urls) {
   console.log(`files: ${snap.files.length} (skipped ${snap.skipped}), chars: ${chars}`);
 
   if (!llm) {
-    const { system, user } = buildQuizPrompt(snap);
-    console.log(`prompt chars: system ${system.length} + user ${user.length}`);
+    // 3 分割のうち 1 回分のプロンプト(3 回とも同じ大きさ)
+    const { system, user } = buildQuizPrompt(snap, planChunks()[0]);
+    console.log(`prompt chars per request: system ${system.length} + user ${user.length} (x3 requests)`);
     continue;
   }
 
   const started = Date.now();
-  const quiz = await generateQuiz(snap, llm);
+  const quiz = await generateQuiz(snap, llm, { log: (m) => console.log(`  ${m}`) });
   console.log(`generated ${quiz.questions.length} questions in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   console.log(summarize(quiz.questions));
   const issues = lintQuestions(quiz.questions, snap.files);
