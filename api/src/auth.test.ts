@@ -73,7 +73,7 @@ describe("GitHub token forwarding", () => {
 
 describe("GET /api/weakness", () => {
   it("requires login and aggregates only the caller's graded sessions", async () => {
-    const gradingLlm = fakeLlm(async (req) => (req.user.includes("<item") ? { grades: [] } : { summary: "s" }));
+    const gradingLlm = fakeLlm(async () => ({ grades: [], summary: "s" }));
     const app = createApp({ llm: gradingLlm, auth, profile: PROFILES.full, fetchSnapshot: async () => snap });
     const call = (path: string, user?: string, body?: unknown) =>
       app.request(path, {

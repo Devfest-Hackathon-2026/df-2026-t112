@@ -46,10 +46,8 @@ describe("POST /api/quiz", () => {
     let calls = 0;
     const gradingLlm = fakeLlm(async (req) => {
       calls++;
-      if (req.user.includes("<item")) {
-        return { grades: [0, 1, 2].map((i) => ({ id: `q${16 + i}`, score: 1, feedback: "ok" })) };
-      }
-      return { summary: "総評" };
+      // 採点と総評は 1 回の呼び出しで返す
+      return { grades: [0, 1, 2].map((i) => ({ id: `q${16 + i}`, score: 1, feedback: "ok" })), summary: "総評" };
     });
     const a = createApp({ llm: gradingLlm, profile: PROFILES.full, fetchSnapshot: async () => snap });
     const created = await (await post(a, "/api/quiz", { url: "x" })).json();
@@ -57,6 +55,7 @@ describe("POST /api/quiz", () => {
 
     const first = await post(a, `/api/quiz/${created.sessionId}/grade`, { answers: { q1: { choice: 0 } } });
     expect(first.status).toBe(200);
+    expect(calls).toBe(1); // 採点と総評で Gemini を呼ぶのは 1 回だけ
     const body = await first.json();
     expect(body.questions).toHaveLength(18);
     expect(body.summary).toBe("総評");
