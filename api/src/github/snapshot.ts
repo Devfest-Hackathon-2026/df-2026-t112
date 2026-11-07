@@ -1,3 +1,4 @@
+import { stripComments } from "./comments.js";
 import { LIMITS, selectFiles, type Limits, type TreeEntry } from "./filter.js";
 import { RepoError, parseRepoUrl } from "./url.js";
 
@@ -66,7 +67,8 @@ export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {
         })
       : await f(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encoded}`);
     if (!res.ok) throw new RepoError("upstream", `ファイル取得に失敗しました: ${path}`);
-    return (await res.text()).slice(0, limits.maxCharsPerFile);
+    // コメントに答えが書かれていることがあるため、画面にも AI にも渡す前に除く(行番号は除去後のもの)
+    return stripComments(path, await res.text()).slice(0, limits.maxCharsPerFile);
   };
 
   const files = await Promise.all(selected.map(async (e) => ({ path: e.path, content: await fetchContent(e.path) })));
