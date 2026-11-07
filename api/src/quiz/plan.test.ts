@@ -54,6 +54,21 @@ describe("planChunks (mini)", () => {
   });
 });
 
+describe("planChunks (standard)", () => {
+  it("makes 2 requests of 5 choice + 1 free, 2 choice questions per category", () => {
+    const chunks = planChunks([], PROFILES.standard);
+    expect(chunks).toHaveLength(2);
+    for (const c of chunks) {
+      expect(c.choice).toHaveLength(5);
+      expect(c.free).toHaveLength(1);
+    }
+    for (const cat of CATEGORIES) {
+      expect(chunks.flatMap((c) => c.choice).filter((x) => x === cat)).toHaveLength(2);
+    }
+    expect(new Set(chunks.flatMap((c) => c.free)).size).toBe(2);
+  });
+});
+
 describe("choiceCounts", () => {
   it("spreads a remainder over the first categories", () => {
     const counts = choiceCounts(7, []);
@@ -76,10 +91,17 @@ describe("primaryFiles", () => {
 });
 
 describe("profileFromEnv", () => {
-  it("defaults to mini and switches to full only when asked", () => {
-    expect(profileFromEnv(undefined).name).toBe("mini");
-    expect(profileFromEnv("whatever").name).toBe("mini");
+  it("defaults to standard and switches only when asked", () => {
+    expect(profileFromEnv(undefined).name).toBe("standard");
+    expect(profileFromEnv("whatever").name).toBe("standard");
+    expect(profileFromEnv("mini").name).toBe("mini");
     expect(profileFromEnv("FULL").name).toBe("full");
+  });
+
+  it("sizes grow from mini to standard to full", () => {
+    const total = (p: keyof typeof PROFILES) => PROFILES[p].limits.maxTotalChars;
+    expect(total("mini")).toBeLessThan(total("standard"));
+    expect(total("standard")).toBeLessThan(total("full"));
   });
 
   it("mini sends far less code than full", () => {
