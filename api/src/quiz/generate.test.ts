@@ -4,6 +4,7 @@ import type { JsonRequest, LlmClient } from "../llm/client.js";
 import { fakeQuestion, fakeQuizResponse } from "../testing/fake-llm.js";
 import { checkShape, generateQuiz, shuffleChoices } from "./generate.js";
 import { planChunks } from "./plan.js";
+import { PROFILES } from "./profile.js";
 import { buildQuizPrompt, numberLines } from "./prompt.js";
 
 const snap: RepoSnapshot = {
@@ -63,6 +64,22 @@ describe("checkShape", () => {
   });
 });
 
+describe("generateQuiz (mini)", () => {
+  it("makes a single request and returns 5 choice + 1 free question", async () => {
+    let calls = 0;
+    const llm: LlmClient = {
+      async generateJson(req) {
+        calls++;
+        return fakeQuizResponse(req.system);
+      },
+    };
+    const quiz = await generateQuiz(snap, llm, { profile: PROFILES.mini });
+    expect(calls).toBe(1);
+    expect(quiz.questions).toHaveLength(6);
+    expect(quiz.questions.filter((q) => q.type === "free")).toHaveLength(1);
+  });
+});
+
 describe("generateQuiz", () => {
   it("splits generation into parallel chunks and merges 15 choice + 3 free", async () => {
     const requests: JsonRequest[] = [];
@@ -72,7 +89,7 @@ describe("generateQuiz", () => {
         return fakeQuizResponse(req.system);
       },
     };
-    const quiz = await generateQuiz(snap, llm);
+    const quiz = await generateQuiz(snap, llm, { profile: PROFILES.full });
 
     expect(requests).toHaveLength(3);
     expect(quiz.questions).toHaveLength(18);
@@ -94,7 +111,7 @@ describe("generateQuiz", () => {
         return fakeQuizResponse(req.system);
       },
     };
-    await generateQuiz(snap, llm);
+    await generateQuiz(snap, llm, { profile: PROFILES.full });
     expect(maxInFlight).toBe(3);
   });
 
@@ -107,7 +124,7 @@ describe("generateQuiz", () => {
         return calls === 1 ? { questions: [fakeQuestion(0, "choice")] } : fakeQuizResponse(req.system);
       },
     };
-    const quiz = await generateQuiz(snap, llm);
+    const quiz = await generateQuiz(snap, llm, { profile: PROFILES.full });
     expect(calls).toBe(4);
     expect(quiz.questions).toHaveLength(18);
   });
@@ -125,7 +142,7 @@ describe("generateQuiz", () => {
         return fakeQuizResponse(req.system);
       },
     };
-    await generateQuiz(snap, llm);
+    await generateQuiz(snap, llm, { profile: PROFILES.full });
     expect(calls).toBe(4);
   });
 
@@ -142,8 +159,8 @@ describe("generateQuiz", () => {
         return fakeQuizResponse(req.system);
       },
     };
-    await generateQuiz(snap, llm, { focus: ["quality"] });
-    const planned = planChunks(["quality"]).flatMap((c) => [...c.choice, ...c.free]).filter((c) => c === "quality").length;
+    await generateQuiz(snap, llm, { focus: ["quality"], profile: PROFILES.full });
+    const planned = planChunks(["quality"], PROFILES.full).flatMap((c) => [...c.choice, ...c.free]).filter((c) => c === "quality").length;
     expect(planned).toBeGreaterThan(3);
     expect(systems.join("\n")).toContain("quality(エラー処理・品質)");
   });

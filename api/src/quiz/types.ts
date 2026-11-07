@@ -12,8 +12,6 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   overall: "全体理解",
 };
 
-export const QUIZ_SHAPE = { choice: 15, free: 3 } as const;
-
 export const questionSchema = z
   .object({
     type: z.enum(["choice", "free"]),
