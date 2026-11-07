@@ -37,27 +37,34 @@ export type GenerateOptions = {
   rng?: Rng;
   /** 形式不正のときに再試行する回数。 */
   retries?: number;
+  /** 所要時間や再試行の理由を受け取る(省略時は何もしない)。 */
+  log?: (message: string) => void;
 };
 
 export async function generateQuiz(snap: RepoSnapshot, llm: LlmClient, opts: GenerateOptions = {}): Promise<Quiz> {
   const { system, user } = buildQuizPrompt(snap, opts.focus);
   const retries = opts.retries ?? 1;
+  const log = opts.log ?? (() => {});
   let lastProblem = "";
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     const prompt = attempt === 0 ? user : `${user}\n\n前回の出力には問題がありました: ${lastProblem}\n修正して出力してください。`;
+    const started = Date.now();
     const raw = await llm.generateJson({ system, user: prompt, schema: generatedQuizSchema });
+    log(`attempt ${attempt + 1}: gemini ${Date.now() - started}ms`);
     const parsed = generatedQuizSchema.safeParse(raw);
     if (!parsed.success) {
       lastProblem = parsed.error.issues
         .slice(0, 3)
         .map((i) => `${i.path.join(".")}: ${i.message}`)
         .join("; ");
+      log(`attempt ${attempt + 1} rejected: ${lastProblem}`);
       continue;
     }
     const shape = checkShape(parsed.data.questions);
     if (shape) {
       lastProblem = shape;
+      log(`attempt ${attempt + 1} rejected: ${lastProblem}`);
       continue;
     }
     const questions: Question[] = parsed.data.questions.map((q, i) => ({

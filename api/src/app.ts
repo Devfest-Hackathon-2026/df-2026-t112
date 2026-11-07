@@ -94,8 +94,12 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     const focus = Array.isArray(body.focus)
       ? (body.focus.filter((f): f is Category => (CATEGORIES as readonly unknown[]).includes(f)) as Category[])
       : [];
+    const t0 = Date.now();
     const snap = await deps.fetchSnapshot(String(body.url ?? ""), c.get("githubToken"));
-    const quiz = await generateQuiz(snap, getLlm(), { focus });
+    const chars = snap.files.reduce((n, f) => n + f.content.length, 0);
+    console.log(`[quiz] ${snap.owner}/${snap.repo}: fetched ${snap.files.length} files, ${chars} chars in ${Date.now() - t0}ms`);
+    const quiz = await generateQuiz(snap, getLlm(), { focus, log: (m) => console.log(`[quiz] ${m}`) });
+    console.log(`[quiz] done in ${Date.now() - t0}ms`);
     const snippets = snippetsFor(quiz, snap.files);
     const session = await deps.store.create({ quiz, snippets, uid: c.get("user")?.uid });
     return c.json({ sessionId: session.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });

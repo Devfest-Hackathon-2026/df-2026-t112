@@ -16,12 +16,17 @@ export interface LlmClient {
 
 export class LlmError extends Error {}
 
+const REQUEST_TIMEOUT_MS = 120_000;
+
 /** モデルは世代交代で使えなくなることがある。環境変数 GEMINI_MODEL で差し替えられる。 */
 export const DEFAULT_MODEL = "gemini-3.8-flash";
 
 /** Gemini SDK の例外を、画面に出せる原因付きのメッセージにする。 */
 export function describeGeminiError(e: unknown, model: string): string {
   const status = (e as { status?: unknown })?.status;
+  if ((e as { name?: unknown })?.name === "AbortError" || /timed? ?out/i.test(String((e as Error)?.message))) {
+    return "Gemini の応答が時間内に返りませんでした。リポジトリが大きすぎる可能性があります";
+  }
   switch (status) {
     case 400:
       return "Gemini へのリクエストが不正です。モデルが構造化出力に対応しているか確認してください";
@@ -54,6 +59,8 @@ export function createGeminiClient(opts: { apiKey?: string; model?: string } = {
           model,
           contents: user,
           config: {
+            // 応答が返らないまま待ち続けないようにする
+            httpOptions: { timeout: REQUEST_TIMEOUT_MS },
             systemInstruction: system,
             responseMimeType: "application/json",
             responseJsonSchema: jsonSchema,
