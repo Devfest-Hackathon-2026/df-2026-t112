@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { z } from "zod";
 
 export type JsonRequest = {
@@ -18,6 +18,25 @@ export class LlmError extends Error {}
 
 const REQUEST_TIMEOUT_MS = 120_000;
 
+/**
+ * 思考モードは出力前に時間がかかる。出題・採点は深い推論が要らないので既定は LOW。
+ * GEMINI_THINKING_LEVEL=minimal|low|medium|high で変更、default でモデルの既定に戻す。
+ */
+export function thinkingConfigFromEnv(value = process.env.GEMINI_THINKING_LEVEL): { thinkingLevel: ThinkingLevel } | undefined {
+  switch ((value ?? "low").toLowerCase()) {
+    case "default":
+      return undefined;
+    case "minimal":
+      return { thinkingLevel: ThinkingLevel.MINIMAL };
+    case "medium":
+      return { thinkingLevel: ThinkingLevel.MEDIUM };
+    case "high":
+      return { thinkingLevel: ThinkingLevel.HIGH };
+    default:
+      return { thinkingLevel: ThinkingLevel.LOW };
+  }
+}
+
 /** モデルは世代交代で使えなくなることがある。環境変数 GEMINI_MODEL で差し替えられる。 */
 export const DEFAULT_MODEL = "gemini-3.8-flash";
 
@@ -35,6 +54,8 @@ export function describeGeminiError(e: unknown, model: string): string {
       return "Gemini の API キーが無効、または権限がありません。GEMINI_API_KEY を確認してください";
     case 404:
       return `Gemini のモデル「${model}」が使えません。.env の GEMINI_MODEL で利用できるモデルを指定してください`;
+    case 504:
+      return "Gemini の応答が時間内に返りませんでした。リポジトリが大きい可能性があります。もう一度お試しください";
     case 429:
       return "Gemini の利用上限に達しました。しばらく待つか、プランの上限を確認してください";
     default:
@@ -61,6 +82,7 @@ export function createGeminiClient(opts: { apiKey?: string; model?: string } = {
           config: {
             // 応答が返らないまま待ち続けないようにする
             httpOptions: { timeout: REQUEST_TIMEOUT_MS },
+            thinkingConfig: thinkingConfigFromEnv(),
             systemInstruction: system,
             responseMimeType: "application/json",
             responseJsonSchema: jsonSchema,

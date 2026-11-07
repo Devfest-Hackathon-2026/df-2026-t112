@@ -39,14 +39,19 @@ const question = (i: number, type: "choice" | "free"): GeneratedQuestion => ({
   explanation: "return a + b; で 2 つの引数を足しています。",
 });
 
+let counter = 0;
+
 const llm: LlmClient = {
   async generateJson(req) {
     await new Promise((r) => setTimeout(r, 800));
-    if (req.user.includes("次のリポジトリ")) {
+    if (req.system.includes("このリクエストで作る問題")) {
+      // 出題は 3 分割で呼ばれる。プロンプトが指定した数だけ返す
+      const m = req.system.match(/選択式を (\d+) 問、記述式を (\d+) 問だけ/);
+      const [choice, free] = [Number(m?.[1] ?? 15), Number(m?.[2] ?? 3)];
       return {
         questions: [
-          ...Array.from({ length: 15 }, (_, i) => question(i, "choice")),
-          ...Array.from({ length: 3 }, (_, i) => question(i + 1, "free")),
+          ...Array.from({ length: choice }, () => question(counter++, "choice")),
+          ...Array.from({ length: free }, () => question(counter++, "free")),
         ],
       };
     }

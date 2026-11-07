@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { describeGeminiError } from "./client.js";
+import { ThinkingLevel } from "@google/genai";
+import { describeGeminiError, thinkingConfigFromEnv } from "./client.js";
 
 describe("describeGeminiError", () => {
   const err = (status: unknown) => ({ status });
@@ -19,5 +20,20 @@ describe("describeGeminiError", () => {
     expect(describeGeminiError(err(429), "m")).toContain("上限");
     expect(describeGeminiError(err(503), "m")).toContain("一時的");
     expect(describeGeminiError(new Error("boom"), "m")).toBe("Gemini の呼び出しに失敗しました");
+  });
+});
+
+describe("describeGeminiError (timeouts)", () => {
+  it("explains a 504 deadline error as a timeout", () => {
+    expect(describeGeminiError({ status: 504 }, "m")).toContain("時間内");
+  });
+});
+
+describe("thinkingConfigFromEnv", () => {
+  it("defaults to LOW, supports other levels, and can be turned off", () => {
+    expect(thinkingConfigFromEnv(undefined)).toEqual({ thinkingLevel: ThinkingLevel.LOW });
+    expect(thinkingConfigFromEnv("minimal")).toEqual({ thinkingLevel: ThinkingLevel.MINIMAL });
+    expect(thinkingConfigFromEnv("HIGH")).toEqual({ thinkingLevel: ThinkingLevel.HIGH });
+    expect(thinkingConfigFromEnv("default")).toBeUndefined();
   });
 });

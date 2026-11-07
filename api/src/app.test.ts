@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import type { RepoSnapshot } from "./github/snapshot.js";
 import { RepoError } from "./github/url.js";
-import type { LlmClient } from "./llm/client.js";
-import { CATEGORIES, type GeneratedQuestion } from "./quiz/types.js";
+import { fakeLlm } from "./testing/fake-llm.js";
 
 const snap: RepoSnapshot = {
   owner: "o",
@@ -14,29 +13,7 @@ const snap: RepoSnapshot = {
   skipped: 0,
 };
 
-const q = (i: number, type: "choice" | "free"): GeneratedQuestion => ({
-  type,
-  category: CATEGORIES[i % 5],
-  difficulty: 1,
-  question: `Q${i}`,
-  codeRef: { path: "src/a.ts", startLine: 2, endLine: 3 },
-  choices: type === "choice" ? ["A", "B", "C", "D"] : [],
-  answerIndex: type === "choice" ? 1 : 0,
-  rubric: type === "free" ? "- 要点" : "",
-  hint: "hint",
-  explanation: "SECRET-EXPLANATION",
-});
-
-const llm: LlmClient = {
-  async generateJson() {
-    return {
-      questions: [
-        ...Array.from({ length: 15 }, (_, i) => q(i, "choice")),
-        ...Array.from({ length: 3 }, (_, i) => q(i, "free")),
-      ],
-    };
-  },
-};
+const llm = fakeLlm();
 
 const app = () => createApp({ llm, fetchSnapshot: async () => snap });
 const post = (a: ReturnType<typeof app>, path: string, body: unknown) =>
@@ -47,12 +24,12 @@ describe("POST /api/quiz", () => {
     const res = await post(app(), "/api/quiz", { url: "https://github.com/o/r" });
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(text).not.toContain("SECRET-EXPLANATION");
+    expect(text).not.toContain('"explanation"');
     expect(text).not.toContain("answerIndex");
     expect(text).not.toContain("rubric");
     const body = JSON.parse(text);
     expect(body.questions).toHaveLength(18);
-    expect(body.questions[0].snippet).toBe("line2\nline3");
+    expect(body.questions[0].snippet).toBe("line1\nline2");
   });
 
   it("can be fetched again by session id", async () => {
@@ -66,16 +43,13 @@ describe("POST /api/quiz", () => {
 
   it("grades answers once and caches the result", async () => {
     let calls = 0;
-    const gradingLlm: LlmClient = {
-      async generateJson(req) {
-        calls++;
-        if (req.user.includes("次のリポジトリ")) return llm.generateJson(req);
-        if (req.user.includes("<item")) {
-          return { grades: [0, 1, 2].map((i) => ({ id: `q${16 + i}`, score: 1, feedback: "ok" })) };
-        }
-        return { summary: "総評" };
-      },
-    };
+    const gradingLlm = fakeLlm(async (req) => {
+      calls++;
+      if (req.user.includes("<item")) {
+        return { grades: [0, 1, 2].map((i) => ({ id: `q${16 + i}`, score: 1, feedback: "ok" })) };
+      }
+      return { summary: "総評" };
+    });
     const a = createApp({ llm: gradingLlm, fetchSnapshot: async () => snap });
     const created = await (await post(a, "/api/quiz", { url: "x" })).json();
     expect(created.questions).toHaveLength(18);
