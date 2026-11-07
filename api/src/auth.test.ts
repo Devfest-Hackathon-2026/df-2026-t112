@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import type { Authenticator } from "./auth.js";
 import type { RepoSnapshot } from "./github/snapshot.js";
+import { PROFILES } from "./quiz/profile.js";
 import { fakeLlm } from "./testing/fake-llm.js";
 
 const snap: RepoSnapshot = {
@@ -28,6 +29,7 @@ function setup() {
   const app = createApp({
     llm,
     auth,
+    profile: PROFILES.full,
     fetchSnapshot: async (_url, userToken) => {
       seen.push(userToken);
       return snap;
@@ -72,7 +74,7 @@ describe("GitHub token forwarding", () => {
 describe("GET /api/weakness", () => {
   it("requires login and aggregates only the caller's graded sessions", async () => {
     const gradingLlm = fakeLlm(async (req) => (req.user.includes("<item") ? { grades: [] } : { summary: "s" }));
-    const app = createApp({ llm: gradingLlm, auth, fetchSnapshot: async () => snap });
+    const app = createApp({ llm: gradingLlm, auth, profile: PROFILES.full, fetchSnapshot: async () => snap });
     const call = (path: string, user?: string, body?: unknown) =>
       app.request(path, {
         method: body ? "POST" : "GET",

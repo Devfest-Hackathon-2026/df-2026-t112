@@ -1,6 +1,7 @@
 import type { RepoSnapshot } from "../github/snapshot.js";
 import { LlmError, type LlmClient } from "../llm/client.js";
 import { planChunks, primaryFiles, type ChunkSpec } from "./plan.js";
+import type { Profile } from "./profile.js";
 import { buildQuizPrompt } from "./prompt.js";
 import {
   generatedQuizSchema,
@@ -35,6 +36,8 @@ export function checkShape(questions: GeneratedQuestion[], spec: ChunkSpec): str
 
 export type GenerateOptions = {
   focus?: Category[];
+  /** クイズの大きさ。未指定なら環境変数 QUIZ_PROFILE(既定は mini)。 */
+  profile?: Profile;
   rng?: Rng;
   /** 形式不正のときに再試行する回数(チャンクごと)。 */
   retries?: number;
@@ -48,10 +51,11 @@ async function generateChunk(
   llm: LlmClient,
   spec: ChunkSpec,
   index: number,
+  chunks: number,
   retries: number,
   log: (message: string) => void,
 ): Promise<GeneratedQuestion[]> {
-  const { system, user } = buildQuizPrompt(snap, spec, primaryFiles(snap.files.map((f) => f.path), index));
+  const { system, user } = buildQuizPrompt(snap, spec, primaryFiles(snap.files.map((f) => f.path), index, chunks));
   let lastProblem = "";
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -80,15 +84,15 @@ async function generateChunk(
 }
 
 /**
- * 18 問を 3 分割して並列に生成する。1 回で全部作るより応答が速く、
+ * プロファイルの問題数を、chunks 回の呼び出しに分けて並列に生成する。1 回で全部作るより応答が速く、
  * 1 回が失敗しても、そのチャンクだけをやり直せる。
  */
 export async function generateQuiz(snap: RepoSnapshot, llm: LlmClient, opts: GenerateOptions = {}): Promise<Quiz> {
   const retries = opts.retries ?? 1;
   const log = opts.log ?? (() => {});
-  const specs = planChunks(opts.focus);
+  const specs = planChunks(opts.focus, opts.profile);
 
-  const chunks = await Promise.all(specs.map((spec, i) => generateChunk(snap, llm, spec, i, retries, log)));
+  const chunks = await Promise.all(specs.map((spec, i) => generateChunk(snap, llm, spec, i, specs.length, retries, log)));
 
   // 選択式 → 記述式の順に並べる(チャンク内の順序は保つ)
   const all = chunks.flat();

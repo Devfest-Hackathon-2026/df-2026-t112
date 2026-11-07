@@ -1,4 +1,4 @@
-import { LIMITS, selectFiles, type TreeEntry } from "./filter.js";
+import { LIMITS, selectFiles, type Limits, type TreeEntry } from "./filter.js";
 import { RepoError, parseRepoUrl } from "./url.js";
 
 export type RepoFile = { path: string; content: string };
@@ -19,6 +19,8 @@ export type FetchOptions = {
    * (サーバー側の共有トークンで他人に非公開リポジトリを読ませないため)。
    */
   allowPrivate?: boolean;
+  /** AI に渡すコードの上限。未指定なら標準(40 ファイル・12 万文字)。 */
+  limits?: Limits;
   fetchImpl?: typeof fetch;
 };
 
@@ -27,6 +29,7 @@ const API = "https://api.github.com";
 export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {}): Promise<RepoSnapshot> {
   const { owner, repo } = parseRepoUrl(urlInput);
   const f = opts.fetchImpl ?? fetch;
+  const limits = opts.limits ?? LIMITS;
   const headers: Record<string, string> = { "User-Agent": "evc-app", Accept: "application/vnd.github+json" };
   if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
 
@@ -51,7 +54,7 @@ export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {
   const entries: TreeEntry[] = tree.tree
     .filter((t) => t.type === "blob")
     .map((t) => ({ path: t.path, size: t.size ?? 0 }));
-  const { selected, skipped } = selectFiles(entries);
+  const { selected, skipped } = selectFiles(entries, limits);
   if (selected.length === 0) throw new RepoError("empty", "解析できるソースコードが見つかりませんでした");
 
   const branch = encodeURIComponent(meta.default_branch);
@@ -63,7 +66,7 @@ export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {
         })
       : await f(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encoded}`);
     if (!res.ok) throw new RepoError("upstream", `ファイル取得に失敗しました: ${path}`);
-    return (await res.text()).slice(0, LIMITS.maxCharsPerFile);
+    return (await res.text()).slice(0, limits.maxCharsPerFile);
   };
 
   const files = await Promise.all(selected.map(async (e) => ({ path: e.path, content: await fetchContent(e.path) })));

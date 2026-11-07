@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import type { RepoSnapshot } from "./github/snapshot.js";
 import { RepoError } from "./github/url.js";
+import { PROFILES } from "./quiz/profile.js";
 import { fakeLlm } from "./testing/fake-llm.js";
 
 const snap: RepoSnapshot = {
@@ -15,7 +16,7 @@ const snap: RepoSnapshot = {
 
 const llm = fakeLlm();
 
-const app = () => createApp({ llm, fetchSnapshot: async () => snap });
+const app = () => createApp({ llm, profile: PROFILES.full, fetchSnapshot: async () => snap });
 const post = (a: ReturnType<typeof app>, path: string, body: unknown) =>
   a.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
@@ -50,7 +51,7 @@ describe("POST /api/quiz", () => {
       }
       return { summary: "総評" };
     });
-    const a = createApp({ llm: gradingLlm, fetchSnapshot: async () => snap });
+    const a = createApp({ llm: gradingLlm, profile: PROFILES.full, fetchSnapshot: async () => snap });
     const created = await (await post(a, "/api/quiz", { url: "x" })).json();
     expect(created.questions).toHaveLength(18);
 
