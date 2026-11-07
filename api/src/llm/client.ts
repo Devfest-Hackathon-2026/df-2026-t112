@@ -39,7 +39,7 @@ export function thinkingConfigFromEnv(value = process.env.GEMINI_THINKING_LEVEL)
 }
 
 /** モデルは世代交代で使えなくなることがある。環境変数 GEMINI_MODEL で差し替えられる。 */
-export const DEFAULT_MODEL = "gemini-3.8-flash";
+export const DEFAULT_MODEL = "gemini-3-flash-preview";
 
 /** Gemini SDK の例外を、画面に出せる原因付きのメッセージにする。 */
 export function describeGeminiError(e: unknown, model: string): string {

@@ -47,7 +47,7 @@ gcloud run deploy evc-api \
   --allow-unauthenticated \
   --max-instances 3 \
   --set-secrets GEMINI_API_KEY=gemini-api-key:latest,GITHUB_TOKEN=github-token:latest \
-  --set-env-vars STORE=firestore,GEMINI_MODEL=gemini-3.8-flash,RATE_LIMIT_PER_HOUR=10
+  --set-env-vars STORE=firestore,GEMINI_MODEL=gemini-3-flash-preview,RATE_LIMIT_PER_HOUR=10
 ```
 
 `--source .` はルートの `Dockerfile` を使います。
