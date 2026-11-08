@@ -46,7 +46,7 @@ jobs:
           flags: >-
             --allow-unauthenticated
             --max-instances=3
-            --set-secrets=GEMINI_API_KEY=gemini-api-key:latest,GITHUB_TOKEN=github-token:latest
+            --set-secrets=GEMINI_API_KEY=gemini-api-key:latest,GITHUB_TOKEN=github-token:latest,APP_PASSWORD=app-password:latest
           env_vars: |
             STORE=firestore
             GEMINI_MODEL=gemini-3-flash-preview

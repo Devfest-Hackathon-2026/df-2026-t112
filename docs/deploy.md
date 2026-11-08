@@ -22,6 +22,12 @@ printf '%s' "<Gemini API キー>" | gcloud secrets create gemini-api-key --data-
 printf '%s' "<GitHub トークン(public_repo 読み取りのみ)>" | gcloud secrets create github-token --data-file=-
 ```
 
+アクセス用の共有パスワードも入れます。設定すると、画面に入るときにパスワードが必要になり、API も `X-App-Password` ヘッダーなしでは 401 を返します(`/api/health` を除く)。
+
+```sh
+printf '%s' "<決めたパスワード>" | gcloud secrets create app-password --data-file=-
+```
+
 Cloud Run のサービスアカウントに `Secret Manager Secret Accessor` ロールを付けます。
 
 ## 2. Firestore
@@ -46,7 +52,7 @@ gcloud run deploy evc-api \
   --region asia-northeast1 \
   --allow-unauthenticated \
   --max-instances 3 \
-  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,GITHUB_TOKEN=github-token:latest \
+  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,GITHUB_TOKEN=github-token:latest,APP_PASSWORD=app-password:latest \
   --set-env-vars STORE=firestore,GEMINI_MODEL=gemini-3-flash-preview,RATE_LIMIT_PER_HOUR=10
 ```
 
@@ -67,6 +73,8 @@ curl https://<project>.web.app/api/health
 ```
 
 ## 注意
+
+- パスワードは API の呼び出しを守ります。Hosting が配る画面の HTML/JS 自体は誰でも取得できます(中身はパスワード入力画面とビルド済みコードのみ)。パスワードはタブを閉じるまでブラウザに保持されます。
 
 - `STORE=firestore` を付けないと、セッションと採点結果はインスタンスのメモリに置かれます。Cloud Run が複数インスタンスに分かれると、結果取得が 404 になります。
 - 匿名の全体集計は Firestore の `stats/global` に入り、`GET /api/stats` で読めます。
