@@ -55,7 +55,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
   if (state === "checking") return null;
   return (
     <main>
-      <form className="card" onSubmit={submit}>
+      <form className="card gate" onSubmit={submit}>
         <h1>EVC</h1>
         <p className="muted">パスワードを入力してください</p>
         <input

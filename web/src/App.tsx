@@ -77,7 +77,7 @@ export function App() {
   };
 
   return (
-    <main>
+    <main className={phase.name === "quiz" ? "wide" : undefined}>
       <header className="app-header">
         <h1>EVC</h1>
         <span className="muted">Escape VibeCoder</span>
@@ -86,8 +86,9 @@ export function App() {
 
       {phase.name === "input" && <RepoForm onSubmit={start} error={error} />}
       {phase.name === "loading" && (
-        <div className="card center" aria-live="polite">
-          <p>コードを読んで問題を作っています…(しばらくかかることがあります)</p>
+        <div className="loading" aria-live="polite">
+          <div className="spinner" />
+          <p>コードを読んで問題を作っています…</p>
           <p className="muted">{phase.url}</p>
         </div>
       )}

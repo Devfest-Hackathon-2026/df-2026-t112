@@ -6,24 +6,23 @@ type Props = {
   question: PublicQuestion;
   answer: Answer | undefined;
   onChange: (answer: Answer) => void;
+  disabled?: boolean;
 };
 
-export function QuestionCard({ index, question: q, answer, onChange }: Props) {
+export function QuestionCard({ index, question: q, answer, onChange, disabled }: Props) {
   const [showHint, setShowHint] = useState(false);
 
   return (
-    <section className="card question">
-      <header>
-        <span className="badge">Q{index + 1}</span>
-        <span className="badge category">{CATEGORY_LABELS[q.category]}</span>
-        <span className="muted">{"★".repeat(q.difficulty)}</span>
-        <span className="tag">{q.type === "choice" ? "選択式" : "記述式"}</span>
-      </header>
-
-      <p className="question-text">{q.question}</p>
+    <section className={q.snippet ? "slide" : "slide no-code"}>
+      <div className="slide-question">
+        <p className="muted slide-meta">
+          {CATEGORY_LABELS[q.category]} ・ {"★".repeat(q.difficulty)}
+        </p>
+        <h2 className="question-text">{q.question}</h2>
+      </div>
 
       {q.snippet && (
-        <figure>
+        <figure className="slide-code">
           <figcaption>
             {q.codeRef.path} L{q.codeRef.startLine}-{q.codeRef.endLine}
           </figcaption>
@@ -33,37 +32,45 @@ export function QuestionCard({ index, question: q, answer, onChange }: Props) {
         </figure>
       )}
 
-      {q.type === "choice" ? (
-        <div className="choices" role="radiogroup" aria-label={`Q${index + 1} の選択肢`}>
-          {q.choices.map((c, i) => (
-            <label key={i} className={answer?.choice === i ? "choice selected" : "choice"}>
-              <input
-                type="radio"
-                name={q.id}
-                checked={answer?.choice === i}
-                onChange={() => onChange({ choice: i })}
-              />
-              <span>{c}</span>
-            </label>
-          ))}
-        </div>
-      ) : (
-        <textarea
-          rows={5}
-          placeholder="自分の言葉で説明してください(2〜3文)"
-          value={answer?.text ?? ""}
-          onChange={(e) => onChange({ text: e.target.value })}
-        />
-      )}
-
-      <div className="hint">
-        {showHint ? (
-          <p className="hint-text">ヒント: {q.hint}</p>
+      <div className="slide-answer">
+        {q.type === "choice" ? (
+          <div className="choices" role="group" aria-label={`問題 ${index + 1} の選択肢`}>
+            {q.choices.map((c, i) => (
+              <button
+                key={i}
+                type="button"
+                className={answer?.choice === i ? "choice selected" : "choice"}
+                aria-pressed={answer?.choice === i}
+                disabled={disabled}
+                onClick={() => onChange({ choice: i })}
+              >
+                <span className="choice-key" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <span>{c}</span>
+              </button>
+            ))}
+          </div>
         ) : (
-          <button type="button" className="link" onClick={() => setShowHint(true)}>
-            ヒントを見る
-          </button>
+          <textarea
+            rows={6}
+            aria-label={`問題 ${index + 1} の回答`}
+            placeholder="自分の言葉で説明してください(2〜3文)"
+            value={answer?.text ?? ""}
+            readOnly={disabled}
+            onChange={(e) => onChange({ text: e.target.value })}
+          />
         )}
+
+        <div className="hint">
+          {showHint ? (
+            <p className="hint-text">{q.hint}</p>
+          ) : (
+            <button type="button" className="link" onClick={() => setShowHint(true)}>
+              ヒントを見る
+            </button>
+          )}
+        </div>
       </div>
     </section>
   );
