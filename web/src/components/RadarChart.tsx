@@ -21,7 +21,7 @@ export function RadarChart({ scores, size = 320 }: Props) {
   const label = CATEGORIES.map((k) => `${CATEGORY_LABELS[k]} ${scores[k] ?? "-"}点`).join("、");
 
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`カテゴリ別スコア: ${label}`} className="radar">
+    <svg viewBox={`-24 0 ${size + 48} ${size}`} role="img" aria-label={`カテゴリ別スコア: ${label}`} className="radar">
       {RINGS.map((ring) => (
         <polygon key={ring} points={polygon(CATEGORIES.map(() => ring))} className="radar-ring" />
       ))}

@@ -18,6 +18,7 @@ function level(score: number): string {
 
 export function ResultView({ session, result, onRestart, onRetry }: Props) {
   const qById = new Map(session.questions.map((q, i) => [q.id, { q, no: i + 1 }]));
+  const correct = result.questions.filter((r) => r.correct).length;
 
   return (
     <div className="result">
@@ -31,17 +32,15 @@ export function ResultView({ session, result, onRestart, onRetry }: Props) {
         </p>
         <p>{level(result.overall)}</p>
         <RadarChart scores={result.categories} />
-      </section>
-
-      <section className="card">
-        <h2>総評</h2>
         <p className="summary">{result.summary}</p>
       </section>
 
       <WeaknessPanel categories={result.categories} onRetry={onRetry} />
 
       <section className="card">
-        <h2>問題ごとの結果</h2>
+        <h2>
+          問題ごとの結果 <span className="muted">{correct} / {result.questions.length} 問正解</span>
+        </h2>
         <ul className="review">
           {result.questions.map((r) => {
             const entry = qById.get(r.id);
@@ -74,7 +73,7 @@ export function ResultView({ session, result, onRestart, onRetry }: Props) {
         </ul>
       </section>
 
-      <button className="primary" onClick={onRestart}>
+      <button className="secondary block" onClick={onRestart}>
         別のリポジトリで試す
       </button>
     </div>
