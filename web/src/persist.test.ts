@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clearProgress, loadProgress, saveProgress, type Saved } from "./persist";
+import { RETENTION_MS, clearProgress, loadProgress, saveProgress, type Saved } from "./persist";
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const data = new Map(Object.entries(initial));
@@ -34,6 +34,21 @@ describe("progress persistence", () => {
     expect(loadProgress(memoryStorage({ "evc:progress": "{not json" }))).toBeNull();
     expect(loadProgress(memoryStorage({ "evc:progress": JSON.stringify({ session: {} }) }))).toBeNull();
     expect(loadProgress(memoryStorage({ "evc:progress": "null" }))).toBeNull();
+  });
+
+  it("restores progress until the retention period ends, then discards it", () => {
+    const storage = memoryStorage();
+    saveProgress(saved, storage, 1000);
+    expect(loadProgress(storage, 1000 + RETENTION_MS - 1)).toEqual(saved);
+    expect(loadProgress(storage, 1000 + RETENTION_MS)).toBeNull();
+    expect(storage.getItem("evc:progress")).toBeNull();
+  });
+
+  it("extends the retention period each time progress is saved", () => {
+    const storage = memoryStorage();
+    saveProgress(saved, storage, 1000);
+    saveProgress(saved, storage, 1000 + RETENTION_MS - 1);
+    expect(loadProgress(storage, 1000 + RETENTION_MS + 1)).toEqual(saved);
   });
 
   it("clears saved progress", () => {
