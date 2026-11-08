@@ -35,6 +35,8 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 export const createQuiz = (url: string, focus: Category[] = []) =>
   request<QuizSession>("/api/quiz", { url, focus });
 
+export const getQuiz = (sessionId: string) => request<QuizSession>(`/api/quiz/${sessionId}`);
+
 export const gradeQuiz = (sessionId: string, answers: Answers) =>
   request<GradeResult>(`/api/quiz/${sessionId}/grade`, { answers });
 
