@@ -10,6 +10,6 @@
     "dev:api": "npm run dev -w api",
     "build": "npm run build -w web && npm run build -w api",
     "typecheck": "npm run typecheck -w web && npm run typecheck -w api",
-    "test": "npm run test -w api"
+    "test": "npm run test -w api && npm run test -w web"
   }
 }

@@ -7,14 +7,18 @@ type Props = {
   submitting: boolean;
   error?: string | null;
   onSubmit: (answers: Answers) => void;
+  /** 再読み込み後に、入力済みの回答を復元するための初期値。 */
+  initialAnswers?: Answers;
+  /** 回答が変わるたびに呼ばれる(進行状況の保存に使う)。 */
+  onAnswersChange?: (answers: Answers) => void;
 };
 
 export function isAnswered(q: QuizSession["questions"][number], a: Answers[string] | undefined): boolean {
   return q.type === "choice" ? a?.choice !== undefined : (a?.text ?? "").trim().length > 0;
 }
 
-export function QuizView({ session, submitting, error, onSubmit }: Props) {
-  const [answers, setAnswers] = useState<Answers>({});
+export function QuizView({ session, submitting, error, onSubmit, initialAnswers, onAnswersChange }: Props) {
+  const [answers, setAnswers] = useState<Answers>(initialAnswers ?? {});
   const answered = session.questions.filter((q) => isAnswered(q, answers[q.id])).length;
   const total = session.questions.length;
 
@@ -37,7 +41,11 @@ export function QuizView({ session, submitting, error, onSubmit }: Props) {
           index={i}
           question={q}
           answer={answers[q.id]}
-          onChange={(a) => setAnswers((prev) => ({ ...prev, [q.id]: a }))}
+          onChange={(a) => {
+            const next = { ...answers, [q.id]: a };
+            setAnswers(next);
+            onAnswersChange?.(next);
+          }}
         />
       ))}
 
