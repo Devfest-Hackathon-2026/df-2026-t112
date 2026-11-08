@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { accessCheck, accessPassword } from "./accessPassword.js";
 import { authMiddleware, type AuthUser, type AuthVariables, type Authenticator } from "./auth.js";
 import { fetchRepoSnapshot, type RepoSnapshot } from "./github/snapshot.js";
 import { RepoError } from "./github/url.js";
@@ -25,6 +26,8 @@ export type Deps = {
   auth?: Authenticator;
   /** クイズの大きさ。未指定なら環境変数 QUIZ_PROFILE(既定は mini)。 */
   profile: Profile;
+  /** 共有パスワード。未指定なら環境変数 APP_PASSWORD。空なら保護しない。 */
+  accessPassword?: string;
 };
 
 const REPO_ERROR_STATUS = {
@@ -61,7 +64,10 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
   };
 
   const app = new Hono<{ Variables: AuthVariables }>();
+  const password = partial.accessPassword ?? process.env.APP_PASSWORD;
+  app.use("/api/*", accessPassword(password));
   app.use("/api/*", authMiddleware(deps.auth));
+  app.get("/api/access", accessCheck(password));
 
   app.onError((err, c) => {
     if (err instanceof RepoError) {
