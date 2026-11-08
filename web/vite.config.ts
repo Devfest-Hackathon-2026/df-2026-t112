@@ -4,6 +4,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react()],
   server: {
-    proxy: { "/api": "http://localhost:8080" },
+    // compose.dev.yaml では API が別コンテナになるので、転送先を API_URL で変えられるようにする
+    proxy: { "/api": process.env.API_URL ?? "http://localhost:8080" },
   },
 });
