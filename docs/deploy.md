@@ -92,3 +92,39 @@ gcloud run services update evc-api --region asia-northeast1 --update-env-vars AU
 - GitHub トークンは `X-GitHub-Token` ヘッダーで API に渡り、保存もログ出力もしません。ブラウザ側もメモリ上にしか持たないため、リロードすると再ログインが必要です。
 - ログインユーザーが作ったセッションは、本人にしか見えません。
 - サーバー側の `GITHUB_TOKEN` は公開リポジトリ用のレート制限対策です。非公開リポジトリには使われません。
+
+## GitHub Actions で自動デプロイ
+
+`main` への push で `.github/workflows/deploy.yml` が走ります(テスト → Cloud Run → Hosting)。認証は鍵ファイルを使わず Workload Identity Federation を使います。初回だけ次を設定します。
+
+```sh
+PROJECT=<project-id>
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+REPO=<github-user>/EVC
+
+gcloud iam service-accounts create evc-deployer
+SA=evc-deployer@$PROJECT.iam.gserviceaccount.com
+for role in run.admin cloudbuild.builds.editor artifactregistry.writer storage.admin iam.serviceAccountUser firebasehosting.admin serviceusage.serviceUsageConsumer; do
+  gcloud projects add-iam-policy-binding $PROJECT --member=serviceAccount:$SA --role=roles/$role
+done
+
+gcloud iam workload-identity-pools create github --location=global
+gcloud iam workload-identity-pools providers create-oidc github \
+  --location=global --workload-identity-pool=github \
+  --issuer-uri=https://token.actions.githubusercontent.com \
+  --attribute-mapping=google.subject=assertion.sub,attribute.repository=assertion.repository \
+  --attribute-condition="assertion.repository=='$REPO'"
+gcloud iam service-accounts add-iam-policy-binding $SA \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/$REPO"
+```
+
+GitHub の Settings → Secrets and variables → Actions → Variables に次を登録します。
+
+| 変数 | 値 |
+|---|---|
+| `GCP_PROJECT_ID` | プロジェクト ID |
+| `GCP_SERVICE_ACCOUNT` | `evc-deployer@<project>.iam.gserviceaccount.com` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<number>/locations/global/workloadIdentityPools/github/providers/github` |
+| `API_AUTH` | 非公開リポジトリ対応を使うなら `firebase`、使わないなら空 |
+| `VITE_FIREBASE_*` | ログイン機能を使うときだけ |
