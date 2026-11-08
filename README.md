@@ -37,6 +37,16 @@ Gemini / GitHub を使わずに画面だけ確認したいときは、API の代
 npm run dev:mock -w api
 ```
 
+ホストに Node を入れずに、Docker だけで API と Web を起動することもできます(`.env` はそのまま読まれます)。
+
+```sh
+docker compose -f compose.dev.yaml up                        # Web http://localhost:5173
+API_SCRIPT=dev:mock docker compose -f compose.dev.yaml up    # モックで起動
+docker compose -f compose.dev.yaml down                      # 停止
+```
+
+Web は `0.0.0.0` で待ち受けるので、同じネットワークや Tailscale の他の端末から `http://<このマシンの IP>:5173` で開けます。
+
 問題の質を確かめるときは検証 CLI を使います。
 
 ```sh
