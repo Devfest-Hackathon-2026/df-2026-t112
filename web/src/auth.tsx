@@ -9,6 +9,7 @@ import {
   type User,
 } from "firebase/auth";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { clearProgress } from "./persist";
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string | undefined,
@@ -64,6 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       logout: async () => {
         githubToken = undefined;
+        // 共有の端末で、次の人に前の人のクイズが見えないようにする
+        clearProgress();
         if (firebaseAuth) await signOut(firebaseAuth);
       },
     }),
