@@ -1,9 +1,9 @@
 import type { RepoSnapshot } from "../github/snapshot.js";
 import { LlmError, type LlmClient } from "../llm/client.js";
-import { planChunks, primaryFiles, type ChunkSpec } from "./plan.js";
+import { availableCategories, planChunks, primaryFiles, type ChunkSpec } from "./plan.js";
 import type { Profile } from "./profile.js";
 import { buildQuizPrompt, type QuizContext } from "./prompt.js";
-import { planRetry, type MissedQuestion } from "./retry.js";
+import { planRetry, toAsked, type MissedQuestion } from "./retry.js";
 import {
   generatedQuizSchema,
   type AskedQuestion,
@@ -85,7 +85,7 @@ async function generateChunk(
         .map((i) => `${i.path.join(".")}: ${i.message}`)
         .join("; ");
     } else {
-      const problem = checkShape(parsed.data.questions, spec) ?? findRepeated(parsed.data.questions, context.asked);
+      const problem = checkShape(parsed.data.questions, spec) ?? findRepeated(parsed.data.questions, [...(context.asked ?? []), ...(context.sameQuiz ?? [])]);
       if (!problem) return parsed.data.questions;
       lastProblem = problem;
     }
@@ -95,16 +95,20 @@ async function generateChunk(
 }
 
 /**
- * プロファイルの問題数を、chunks 回の呼び出しに分けて並列に生成する。1 回で全部作るより応答が速く、
- * 1 回が失敗しても、そのチャンクだけをやり直せる。
+ * プロファイルの問題数を、chunks 回の呼び出しに分けて生成する。1 回が失敗しても、そのチャンクだけをやり直せる。
+ * 並列だと互いの問題が見えず同じ内容が重複するので、先に作った問題を渡しながら順番に作る。
  */
 export async function generateQuiz(snap: RepoSnapshot, llm: LlmClient, opts: GenerateOptions = {}): Promise<Quiz> {
   const retries = opts.retries ?? 1;
   const log = opts.log ?? (() => {});
-  const specs = planChunks(opts.profile);
+  const specs = planChunks(opts.profile, availableCategories(snap.files));
 
-  const chunks = await Promise.all(specs.map((spec, i) => generateChunk(snap, llm, spec, i, specs.length, retries, log, { asked: opts.asked })));
-  return toQuiz(snap, chunks.flat(), opts.rng);
+  const all: GeneratedQuestion[] = [];
+  for (const [i, spec] of specs.entries()) {
+    const context = { asked: opts.asked, sameQuiz: all.map(toAsked) };
+    all.push(...(await generateChunk(snap, llm, spec, i, specs.length, retries, log, context)));
+  }
+  return toQuiz(snap, all, opts.rng);
 }
 
 /** 間違えた問題をもとに、短い再挑戦用のクイズを作る。 */

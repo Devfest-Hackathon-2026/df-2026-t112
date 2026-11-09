@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choiceCounts, planChunks, primaryFiles } from "./plan.js";
+import { availableCategories, choiceCounts, planChunks, primaryFiles } from "./plan.js";
 import { PROFILES, profileFromEnv } from "./profile.js";
 import { CATEGORIES } from "./types.js";
 
@@ -54,14 +54,64 @@ describe("planChunks (standard)", () => {
 
 describe("free question rotation", () => {
   it("starts at the given category and wraps around", () => {
-    const free = (offset: number) => planChunks(PROFILES.standard, offset).flatMap((c) => c.free);
+    const free = (offset: number) => planChunks(PROFILES.standard, CATEGORIES, offset).flatMap((c) => c.free);
     expect(free(0)).toEqual(["reading", "design"]);
     expect(free(4)).toEqual(["security", "reading"]);
   });
 
   it("can give free questions to every category", () => {
-    const seen = CATEGORIES.map((_, offset) => planChunks(PROFILES.mini, offset)[0].free[0]);
+    const seen = CATEGORIES.map((_, offset) => planChunks(PROFILES.mini, CATEGORIES, offset)[0].free[0]);
     expect(new Set(seen)).toEqual(new Set(CATEGORIES));
+  });
+});
+
+describe("availableCategories", () => {
+  const without = CATEGORIES.filter((c) => c !== "security");
+  const file = (path: string, content: string) => ({ path, content });
+
+  it("drops security for code with nothing to protect", () => {
+    expect(
+      availableCategories([
+        file("index.html", '<img src="a.png" alt="x"><link rel="stylesheet" href="s.css">'),
+        file("styles.css", "* { margin: 0; }"),
+        file("README.md", "Fork this repository and create a pull request. Add an auth token."),
+      ]),
+    ).toEqual(without);
+    expect(availableCategories([file("add.ts", "export const add = (a: number, b: number) => a + b;")])).toEqual(without);
+  });
+
+  it.each([
+    ["app.ts", "if (!isAuthorized(user)) throw new Error()"],
+    ["server.js", "const name = req.body.name;"],
+    ["config.py", "key = os.environ['KEY']"],
+    ["client.ts", "await fetch(url)"],
+    ["view.tsx", "el.innerHTML = value"],
+    ["db.py", 'cur.execute("SELECT name FROM users WHERE id = 1")'],
+    ["index.html", '<form action="/login"></form>'],
+    ["cors.js", "res.setHeader('Access-Control-Allow-Origin', '*')"],
+  ])("keeps security for %s", (path, content) => {
+    expect(availableCategories([file(path, content)])).toEqual(CATEGORIES);
+  });
+
+  it("is not fooled by the word author", () => {
+    expect(availableCategories([file("a.ts", "export const author = 'x';")])).toEqual(without);
+  });
+
+  it("ignores words that only appear in documents", () => {
+    expect(availableCategories([file("docs/guide.md", "password secret token"), file("a.ts", "export const a = 1;")])).toEqual(without);
+  });
+});
+
+describe("planChunks without security", () => {
+  const without = CATEGORIES.filter((c) => c !== "security");
+
+  it("keeps the total and spreads questions over the remaining categories", () => {
+    const chunks = planChunks(PROFILES.standard, without, 0);
+    const all = chunks.flatMap((c) => [...c.choice, ...c.free]);
+    expect(chunks.flatMap((c) => c.choice)).toHaveLength(10);
+    expect(chunks.flatMap((c) => c.free)).toHaveLength(2);
+    expect(all).not.toContain("security");
+    expect(new Set(all)).toEqual(new Set(without));
   });
 });
 

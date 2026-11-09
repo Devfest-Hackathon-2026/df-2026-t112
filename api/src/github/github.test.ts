@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isCandidate, selectFiles } from "./filter.js";
+import { isCandidate, measureSource, selectFiles } from "./filter.js";
 import { fetchRepoSnapshot } from "./snapshot.js";
 import { RepoError, parseRepoUrl } from "./url.js";
 
@@ -105,5 +105,78 @@ describe("fetchRepoSnapshot", () => {
     await expect(
       fetchRepoSnapshot("https://github.com/o/r", { fetchImpl: mockFetch({}, 404) }),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+});
+
+describe("files that are not worth reading", () => {
+  const entry = (path: string, size = 100) => ({ path, size });
+
+  it.each([
+    "examples/auth/index.js",
+    "packages/app/demo/main.ts",
+    "test/fixtures/a.js",
+    "docs/guide/intro.js",
+    "benchmarks/run.js",
+    "src/__mocks__/api.ts",
+    ".github/scripts/release.js",
+    "vite.config.ts",
+    "packages/core/rollup.config.mjs",
+    ".eslintrc.js",
+    "packages/core/package.json",
+    "packages/core/README.md",
+  ])("skips %s", (path) => {
+    expect(isCandidate(entry(path))).toBe(false);
+  });
+
+  it.each(["src/app.ts", "packages/core/src/index.ts", "README.md", "package.json", "lib/express.js", "scripts/build.sh", "test/app.test.ts"])(
+    "keeps %s",
+    (path) => {
+      expect(isCandidate(entry(path))).toBe(true);
+    },
+  );
+
+  it("does not let shallow examples crowd out the real code", () => {
+    const tree = [
+      ...Array.from({ length: 30 }, (_, i) => entry(`examples/e${i}.js`)),
+      ...Array.from({ length: 5 }, (_, i) => entry(`lib/deep/er/m${i}.js`)),
+    ];
+    expect(selectFiles(tree).selected.map((e) => e.path).every((p) => p.startsWith("lib/"))).toBe(true);
+  });
+
+  it("reads the examples when the repository is nothing but examples", () => {
+    const tree = [entry("README.md"), entry("examples/a.js"), entry("examples/b.js")];
+    expect(selectFiles(tree).selected.map((e) => e.path)).toEqual(expect.arrayContaining(["examples/a.js", "examples/b.js"]));
+  });
+
+  it("keeps a few tests even when the code fills the limit", () => {
+    const tree = [
+      ...Array.from({ length: 100 }, (_, i) => entry(`src/f${i}.ts`)),
+      ...Array.from({ length: 20 }, (_, i) => entry(`test/t${i}.test.ts`)),
+    ];
+    const paths = selectFiles(tree).selected.map((e) => e.path);
+    expect(paths).toHaveLength(40);
+    expect(paths.filter((p) => p.startsWith("test/"))).toHaveLength(5);
+  });
+
+  it("measures only the real code", () => {
+    expect(
+      measureSource([
+        entry("lib/a.js", 1000),
+        entry("README.md", 5000),
+        entry("package.json", 5000),
+        entry("test/a.js", 9000),
+        entry("lib/a_test.go", 9000),
+        entry("examples/b.js", 9000),
+        entry("vite.config.ts", 9000),
+      ]),
+    ).toEqual({ files: 1, bytes: 1000 });
+  });
+
+  it.each(["test-d/index.ts", "tests_unit/a.py", "test.js", "pkg/tests.ts", "pkg/test_a.py"])("treats %s as a test", (path) => {
+    expect(measureSource([entry(path, 1000), entry("src/a.ts", 1000)])).toEqual({ files: 1, bytes: 1000 });
+  });
+
+  it("measures the examples when there is nothing else", () => {
+    expect(measureSource([entry("README.md", 5000), entry("examples/a.js", 2000)])).toEqual({ files: 1, bytes: 2000 });
   });
 });

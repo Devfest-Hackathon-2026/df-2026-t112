@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { accessCheck, accessPassword } from "./accessPassword.js";
 import { authMiddleware, type AuthUser, type AuthVariables, type Authenticator } from "./auth.js";
+import type { RepoSize } from "./github/filter.js";
 import { checkRepo, fetchRepoSnapshot, type RepoCheck, type RepoSnapshot } from "./github/snapshot.js";
 import { RepoError } from "./github/url.js";
 import { LlmError, createGeminiClient, type LlmClient } from "./llm/client.js";
@@ -9,7 +10,7 @@ import type { Answer } from "./grading/scoring.js";
 import { analyzeWeakness } from "./grading/weakness.js";
 import { generateQuiz, generateSimilarQuiz } from "./quiz/generate.js";
 import { snippetsFor, toPublicQuestions } from "./quiz/public.js";
-import { PROFILES, profileFromEnv, type Profile } from "./quiz/profile.js";
+import { PROFILES, fixedProfileFromEnv, profileForSize, type Profile } from "./quiz/profile.js";
 import { collectAsked, missedQuestions } from "./quiz/retry.js";
 import { rateLimit } from "./rateLimit.js";
 import { MemorySessionStore, type SessionStore } from "./store/session.js";
@@ -26,8 +27,8 @@ export type Deps = {
   checkRepo: (url: string, userToken?: string) => Promise<RepoCheck>;
   /** 未指定なら認証なし(匿名のみ)。 */
   auth?: Authenticator;
-  /** クイズの大きさ。未指定なら環境変数 QUIZ_PROFILE(既定は mini)。 */
-  profile: Profile;
+  /** クイズの大きさを固定する。未指定なら環境変数 QUIZ_PROFILE、それも無ければリポジトリの規模で決める。 */
+  profile?: Profile;
   /** 共有パスワード。未指定なら環境変数 APP_PASSWORD。空なら保護しない。 */
   accessPassword?: string;
 };
@@ -42,13 +43,14 @@ const REPO_ERROR_STATUS = {
 } as const;
 
 export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVariables }> {
-  const profile = partial.profile ?? profileFromEnv();
+  const fixedProfile = partial.profile ?? fixedProfileFromEnv();
+  const limits = (size: RepoSize) => (fixedProfile ?? profileForSize(size)).limits;
   const deps: Deps = {
     store: partial.store ?? new MemorySessionStore(),
     stats: partial.stats ?? new MemoryStatsStore(),
     llm: partial.llm,
     auth: partial.auth,
-    profile,
+    profile: fixedProfile,
     checkRepo:
       partial.checkRepo ??
       ((url, userToken) =>
@@ -57,9 +59,13 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
       partial.fetchSnapshot ??
       ((url, userToken) =>
         userToken
-          ? fetchRepoSnapshot(url, { token: userToken, allowPrivate: true, limits: profile.limits })
-          : fetchRepoSnapshot(url, { token: process.env.GITHUB_TOKEN, limits: profile.limits })),
+          ? fetchRepoSnapshot(url, { token: userToken, allowPrivate: true, limits })
+          : fetchRepoSnapshot(url, { token: process.env.GITHUB_TOKEN, limits })),
   };
+  /** 固定されていなければ、切り詰める前の本体のコードの総量で問題数を決める。 */
+  const profileFor = (snap: RepoSnapshot): Profile =>
+    deps.profile ??
+    profileForSize(snap.size ?? { files: snap.files.length, bytes: snap.files.reduce((n, f) => n + f.content.length, 0) });
   const getLlm = () => (deps.llm ??= createGeminiClient());
 
   /** ログインユーザーが作ったセッションは本人にだけ見せる(存在も明かさない)。 */
@@ -120,7 +126,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     const snap = await deps.fetchSnapshot(String(body.url ?? ""), c.get("githubToken"));
     const chars = snap.files.reduce((n, f) => n + f.content.length, 0);
     console.log(`[quiz] ${snap.owner}/${snap.repo}: fetched ${snap.files.length} files, ${chars} chars in ${Date.now() - t0}ms`);
-    const quiz = await generateQuiz(snap, getLlm(), { profile: deps.profile, log: (m) => console.log(`[quiz] ${m}`) });
+    const quiz = await generateQuiz(snap, getLlm(), { profile: profileFor(snap), log: (m) => console.log(`[quiz] ${m}`) });
     console.log(`[quiz] done in ${Date.now() - t0}ms`);
     const snippets = snippetsFor(quiz, snap.files);
     const session = await deps.store.create({ quiz, snippets, uid: c.get("user")?.uid });
@@ -165,7 +171,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     const quiz =
       missed.length > 0
         ? await generateSimilarQuiz(snap, getLlm(), missed, { asked, log })
-        : await generateQuiz(snap, getLlm(), { profile: PROFILES.mini, asked, log });
+        : await generateQuiz(snap, getLlm(), { profile: profileFor(snap).name === "tiny" ? PROFILES.tiny : PROFILES.mini, asked, log });
     const snippets = snippetsFor(quiz, snap.files);
     const next = await deps.store.create({ quiz, snippets, asked, uid: c.get("user")?.uid });
     return c.json({ sessionId: next.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });

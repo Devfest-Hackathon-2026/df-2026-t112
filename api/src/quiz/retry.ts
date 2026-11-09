@@ -1,7 +1,7 @@
 import type { QuestionResult } from "../grading/scoring.js";
 import { currentCategory } from "../grading/scoring.js";
 import type { ChunkSpec } from "./plan.js";
-import type { AskedQuestion, Category, Quiz } from "./types.js";
+import type { AskedQuestion, Category, GeneratedQuestion, Quiz } from "./types.js";
 
 /** 再挑戦の問題数。間違えた数に合わせるが、短く済むように上限を設ける。 */
 export const RETRY_MIN = 3;
@@ -44,21 +44,37 @@ export function missedQuestions(quiz: Quiz, results: QuestionResult[]): MissedQu
     });
 }
 
-/** 再挑戦の内訳。多く間違えた分野を優先して記述式にし、半分を記述式、残りを選択式にする。 */
+/**
+ * 問題数の上限があっても、間違えた分野が漏れないように選ぶ。
+ * 多く間違えた分野から順に、分野ごとに 1 問ずつ取り出すことを繰り返す。
+ */
+export function pickMissed<T extends { category: Category }>(missed: T[]): T[] {
+  const byCategory = new Map<Category, T[]>();
+  for (const m of missed) byCategory.set(m.category, [...(byCategory.get(m.category) ?? []), m]);
+  const queues = [...byCategory.values()].sort((a, b) => b.length - a.length);
+
+  const picked: T[] = [];
+  while (picked.length < RETRY_MAX && queues.some((q) => q.length > 0)) {
+    for (const queue of queues) {
+      const next = queue.shift();
+      if (next && picked.length < RETRY_MAX) picked.push(next);
+    }
+  }
+  return picked;
+}
+
+/** 再挑戦の内訳。半分を記述式、残りを選択式にし、多く間違えた分野から記述式に割り当てる。 */
 export function planRetry(missed: Pick<MissedQuestion, "category">[]): ChunkSpec {
   const total = Math.min(Math.max(missed.length, RETRY_MIN), RETRY_MAX);
-  const misses = new Map<Category, number>();
-  for (const m of missed) misses.set(m.category, (misses.get(m.category) ?? 0) + 1);
-
-  const byMisses = missed.map((m) => m.category).sort((a, b) => misses.get(b)! - misses.get(a)!);
-  const ordered = Array.from({ length: total }, (_, i) => byMisses[i % byMisses.length]);
+  const picked = pickMissed(missed);
+  const ordered = Array.from({ length: total }, (_, i) => picked[i % picked.length].category);
   const freeCount = Math.ceil(total / 2);
   return { free: ordered.slice(0, freeCount), choice: ordered.slice(freeCount) };
 }
 
 export function renderMissed(missed: MissedQuestion[]): string {
   const clip = (s: string) => s.slice(0, MAX_TEXT_CHARS);
-  const items = missed.slice(0, RETRY_MAX).map((m) =>
+  const items = pickMissed(missed).map((m) =>
     [
       `<missed>`,
       `問題: ${clip(m.question)}`,
@@ -73,13 +89,11 @@ export function renderMissed(missed: MissedQuestion[]): string {
 
 /** これまでの履歴に、今回のクイズの問題を足す(新しいものを残す)。 */
 export function collectAsked(prior: AskedQuestion[] | undefined, quiz: Quiz): AskedQuestion[] {
-  const current = quiz.questions.map((q) => ({
-    question: q.question,
-    path: q.codeRef.path,
-    startLine: q.codeRef.startLine,
-    endLine: q.codeRef.endLine,
-  }));
-  return [...(prior ?? []), ...current].slice(-MAX_ASKED);
+  return [...(prior ?? []), ...quiz.questions.map(toAsked)].slice(-MAX_ASKED);
+}
+
+export function toAsked(q: Pick<GeneratedQuestion, "question" | "codeRef">): AskedQuestion {
+  return { question: q.question, path: q.codeRef.path, startLine: q.codeRef.startLine, endLine: q.codeRef.endLine };
 }
 
 export function renderAsked(asked: AskedQuestion[]): string {

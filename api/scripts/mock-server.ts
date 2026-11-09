@@ -25,6 +25,8 @@ const snapshot: RepoSnapshot = {
   description: "モックデータのリポジトリ",
   files: [{ path: "src/add.ts", content: code }],
   skipped: 0,
+  // モックでは標準の 12 問で画面を確認する
+  size: { files: 20, bytes: 100_000 },
 };
 
 const question = (i: number, type: "choice" | "free"): GeneratedQuestion => ({

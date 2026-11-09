@@ -1,5 +1,5 @@
 import { stripComments } from "./comments.js";
-import { LIMITS, selectFiles, type Limits, type TreeEntry } from "./filter.js";
+import { LIMITS, measureSource, selectFiles, type Limits, type RepoSize, type TreeEntry } from "./filter.js";
 import { RepoError, parseRepoUrl } from "./url.js";
 
 export type RepoFile = { path: string; content: string };
@@ -10,6 +10,8 @@ export type RepoSnapshot = {
   description: string | null;
   files: RepoFile[];
   skipped: number;
+  /** 切り詰める前の、本体のコードの総量。 */
+  size?: RepoSize;
 };
 
 export type FetchOptions = {
@@ -20,8 +22,8 @@ export type FetchOptions = {
    * (サーバー側の共有トークンで他人に非公開リポジトリを読ませないため)。
    */
   allowPrivate?: boolean;
-  /** AI に渡すコードの上限。未指定なら標準(40 ファイル・12 万文字)。 */
-  limits?: Limits;
+  /** AI に渡すコードの上限。未指定なら標準(40 ファイル・12 万文字)。関数なら、リポジトリの規模から決める。 */
+  limits?: Limits | ((size: RepoSize) => Limits);
   fetchImpl?: typeof fetch;
 };
 
@@ -65,7 +67,6 @@ export async function checkRepo(urlInput: string, opts: FetchOptions = {}): Prom
 
 export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {}): Promise<RepoSnapshot> {
   const { owner, repo } = parseRepoUrl(urlInput);
-  const limits = opts.limits ?? LIMITS;
   const { f, headers, getJson, getMeta } = githubClient(opts);
 
   const meta = await getMeta(owner, repo);
@@ -76,6 +77,8 @@ export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {
   const entries: TreeEntry[] = tree.tree
     .filter((t) => t.type === "blob")
     .map((t) => ({ path: t.path, size: t.size ?? 0 }));
+  const size = measureSource(entries);
+  const limits = typeof opts.limits === "function" ? opts.limits(size) : (opts.limits ?? LIMITS);
   const { selected, skipped } = selectFiles(entries, limits);
   if (selected.length === 0) throw new RepoError("empty", "解析できるソースコードが見つかりませんでした");
 
@@ -93,5 +96,5 @@ export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {
   };
 
   const files = await Promise.all(selected.map(async (e) => ({ path: e.path, content: await fetchContent(e.path) })));
-  return { owner, repo, branch: meta.default_branch, description: meta.description, files, skipped };
+  return { owner, repo, branch: meta.default_branch, description: meta.description, files, skipped, size };
 }
