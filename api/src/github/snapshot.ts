@@ -25,17 +25,20 @@ export type FetchOptions = {
   fetchImpl?: typeof fetch;
 };
 
+export type RepoCheck = { owner: string; repo: string; description: string | null };
+
+type RepoMeta = { default_branch: string; description: string | null; private: boolean };
+
 const API = "https://api.github.com";
 
-export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {}): Promise<RepoSnapshot> {
-  const { owner, repo } = parseRepoUrl(urlInput);
+function githubClient(opts: FetchOptions) {
   const f = opts.fetchImpl ?? fetch;
-  const limits = opts.limits ?? LIMITS;
   const headers: Record<string, string> = { "User-Agent": "evc-app", Accept: "application/vnd.github+json" };
   if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
 
   const getJson = async <T>(path: string): Promise<T> => {
     const res = await f(`${API}${path}`, { headers });
+    // 権限のない非公開リポジトリにも GitHub は 404 を返すので、ここでは「存在しない」と区別できない
     if (res.status === 404) throw new RepoError("not_found", "リポジトリが見つかりません(非公開の可能性もあります)");
     if (res.status === 403 || res.status === 429) {
       throw new RepoError("rate_limited", "GitHub API の制限に達しました。しばらくしてから再度お試しください");
@@ -44,10 +47,28 @@ export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {
     return (await res.json()) as T;
   };
 
-  const meta = await getJson<{ default_branch: string; description: string | null; private: boolean }>(
-    `/repos/${owner}/${repo}`,
-  );
-  if (meta.private && !opts.allowPrivate) throw new RepoError("private", "非公開リポジトリは対応していません");
+  const getMeta = async (owner: string, repo: string): Promise<RepoMeta> => {
+    const meta = await getJson<RepoMeta>(`/repos/${owner}/${repo}`);
+    if (meta.private && !opts.allowPrivate) throw new RepoError("private", "非公開リポジトリは対応していません");
+    return meta;
+  };
+
+  return { f, headers, getJson, getMeta };
+}
+
+/** ファイルは取得せず、リポジトリを読めるかどうかだけを確かめる(入力欄の即時チェック用)。 */
+export async function checkRepo(urlInput: string, opts: FetchOptions = {}): Promise<RepoCheck> {
+  const { owner, repo } = parseRepoUrl(urlInput);
+  const meta = await githubClient(opts).getMeta(owner, repo);
+  return { owner, repo, description: meta.description };
+}
+
+export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {}): Promise<RepoSnapshot> {
+  const { owner, repo } = parseRepoUrl(urlInput);
+  const limits = opts.limits ?? LIMITS;
+  const { f, headers, getJson, getMeta } = githubClient(opts);
+
+  const meta = await getMeta(owner, repo);
 
   const tree = await getJson<{ tree: { path: string; type: string; size?: number }[] }>(
     `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(meta.default_branch)}?recursive=1`,

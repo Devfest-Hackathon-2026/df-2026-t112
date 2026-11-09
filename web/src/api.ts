@@ -11,13 +11,14 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, body?: unknown): Promise<T> {
+async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
       method: body === undefined ? "GET" : "POST",
       headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...accessHeaders(), ...(await authHeaders()) },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
   } catch {
     throw new ApiError("network", "サーバーに接続できませんでした");
@@ -32,6 +33,9 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   }
   return data as T;
 }
+
+export const checkRepo = (url: string, signal?: AbortSignal) =>
+  request<{ owner: string; repo: string; description: string | null }>("/api/repo/check", { url }, signal);
 
 export const createQuiz = (url: string, focus: Category[] = []) =>
   request<QuizSession>("/api/quiz", { url, focus });
