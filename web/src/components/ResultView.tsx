@@ -65,7 +65,7 @@ export function ResultView({ session, result, onRestart, onRetry, error }: Props
         <p className="muted">
           {missed > 0
             ? "間違えた内容をもとに、3〜6 問の短いクイズを作ります。"
-            : "全問正解です。同じリポジトリから、別の問題で 6 問のクイズを作ります。"}
+            : "全問正解です。同じリポジトリから、まだ解いていない問題で短いクイズを作ります。"}
         </p>
       </div>
 

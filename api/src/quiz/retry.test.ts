@@ -7,7 +7,7 @@ import { MemorySessionStore, type Session } from "../store/session.js";
 import { fakeQuizResponse } from "../testing/fake-llm.js";
 import { findRepeated, generateQuiz } from "./generate.js";
 import { PROFILES } from "./profile.js";
-import { RETRY_MAX, RETRY_MIN, collectAsked, planRetry, renderMissed, type MissedQuestion } from "./retry.js";
+import { RETRY_MAX, RETRY_MIN, collectAsked, pickMissed, planRetry, renderMissed, type MissedQuestion } from "./retry.js";
 import type { Category, GeneratedQuestion, Quiz } from "./types.js";
 
 const missed = (category: Category): Pick<MissedQuestion, "category"> => ({ category });
@@ -31,12 +31,42 @@ describe("planRetry", () => {
 
   it("makes half written questions, starting with the most-missed area", () => {
     const spec = planRetry([missed("reading"), missed("design"), missed("design"), missed("design")]);
-    expect(spec.free).toEqual(["design", "design"]);
-    expect(spec.choice).toEqual(["design", "reading"]);
+    expect(spec.free).toEqual(["design", "reading"]);
+    expect(spec.choice).toEqual(["design", "design"]);
+  });
+
+  it("covers every missed area even when capped", () => {
+    const many = [
+      ...Array.from({ length: 3 }, () => missed("knowledge")),
+      ...Array.from({ length: 3 }, () => missed("quality")),
+      ...Array.from({ length: 2 }, () => missed("design")),
+      missed("security"),
+    ];
+    const spec = planRetry(many);
+    const categories = [...spec.free, ...spec.choice];
+    expect(categories).toHaveLength(RETRY_MAX);
+    expect(new Set(categories)).toEqual(new Set(["knowledge", "quality", "design", "security"]));
+  });
+});
+
+describe("pickMissed", () => {
+  it("takes one from each area before repeating, most-missed first", () => {
+    const picked = pickMissed([missed("reading"), missed("design"), missed("design")]);
+    expect(picked.map((m) => m.category)).toEqual(["design", "reading", "design"]);
+  });
+
+  it("never returns more than the maximum", () => {
+    expect(pickMissed(Array.from({ length: 20 }, () => missed("reading")))).toHaveLength(RETRY_MAX);
   });
 });
 
 describe("renderMissed", () => {
+  it("includes every missed area when there are too many to list", () => {
+    const item = (category: Category, question: string): MissedQuestion => ({ category, question, correctAnswer: "a", userAnswer: "b", path: "a.ts", startLine: 1, endLine: 2 });
+    const text = renderMissed([...Array.from({ length: 8 }, (_, i) => item("reading", `読解${i}`)), item("security", "安全性の問題")]);
+    expect(text).toContain("安全性の問題");
+  });
+
   it("clips long answers", () => {
     const text = renderMissed([
       { category: "reading", question: "q", correctAnswer: "a", userAnswer: "x".repeat(2000), path: "a.ts", startLine: 1, endLine: 2 },

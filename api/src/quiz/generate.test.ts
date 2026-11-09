@@ -81,7 +81,7 @@ describe("generateQuiz (mini)", () => {
 });
 
 describe("generateQuiz", () => {
-  it("splits generation into parallel chunks and merges 15 choice + 3 free", async () => {
+  it("splits generation into chunks and merges 15 choice + 3 free", async () => {
     const requests: JsonRequest[] = [];
     const llm: LlmClient = {
       async generateJson(req) {
@@ -99,20 +99,40 @@ describe("generateQuiz", () => {
     expect(quiz.repo.owner).toBe("o");
   });
 
-  it("starts every chunk before any finishes (runs in parallel)", async () => {
-    let inFlight = 0;
-    let maxInFlight = 0;
+  it("gives later chunks the questions already made, so one quiz has no duplicates", async () => {
+    const requests: JsonRequest[] = [];
     const llm: LlmClient = {
       async generateJson(req) {
-        inFlight++;
-        maxInFlight = Math.max(maxInFlight, inFlight);
-        await new Promise((r) => setTimeout(r, 10));
-        inFlight--;
+        requests.push(req);
         return fakeQuizResponse(req.system);
       },
     };
-    await generateQuiz(snap, llm, { profile: PROFILES.full });
-    expect(maxInFlight).toBe(3);
+    const quiz = await generateQuiz(snap, llm, { profile: PROFILES.full });
+    expect(requests).toHaveLength(3);
+    expect(requests[0].user).not.toContain("<asked_questions>");
+    const firstOfChunkOne = quiz.questions[0].question;
+    expect(requests[1].user).toContain("<asked_questions>");
+    expect(requests[1].user).toContain(firstOfChunkOne);
+    expect(requests[2].user).toContain(firstOfChunkOne);
+    // 続けて解くときの指示は混ざらない
+    expect(requests[1].system).not.toContain("# 続けて解く問題");
+  });
+
+  it("asks again when a later chunk repeats an earlier question", async () => {
+    let calls = 0;
+    let first = "";
+    const llm: LlmClient = {
+      async generateJson(req) {
+        calls++;
+        const response = fakeQuizResponse(req.system);
+        if (calls === 1) first = response.questions[0].question;
+        if (calls === 2) response.questions[0].question = first;
+        return response;
+      },
+    };
+    const quiz = await generateQuiz(snap, llm, { profile: PROFILES.standard });
+    expect(calls).toBe(3);
+    expect(quiz.questions.filter((q) => q.question === first)).toHaveLength(1);
   });
 
   it("retries only the chunk that came back malformed", async () => {
