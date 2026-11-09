@@ -52,17 +52,34 @@ function extensionOf(path: string): string {
  * 対応していない種類のファイル(Markdown、JSON など)はそのまま返す。
  */
 export function stripComments(path: string, content: string): string {
+  return stripCommentsWithLines(path, content).content;
+}
+
+/** コメントを除き、出力の各行が元のファイルの何行目だったか(1 始まり)も返す。 */
+export function stripCommentsWithLines(path: string, content: string): { content: string; lines: number[] } {
   const syntax = BY_EXTENSION[extensionOf(path)];
-  if (!syntax) return content;
+  if (!syntax) return { content, lines: content.split("\n").map((_, i) => i + 1) };
 
   const src = content.replace(/\r\n?/g, "\n");
   const lines: string[] = [];
+  const origins: number[] = [];
   let cur = "";
   let removedOnLine = false;
 
-  const endLine = () => {
+  let scanned = 0;
+  let newlines = 0;
+  /** いま読んでいる位置が元のファイルの何行目か。i は戻らないので、続きから数える。 */
+  const currentLine = () => {
+    for (; scanned < i; scanned++) if (src[scanned] === "\n") newlines++;
+    return newlines + 1;
+  };
+
+  const endLine = (line = currentLine()) => {
     // コメントだけだった行は、行ごと消す
-    if (!(cur.trim() === "" && removedOnLine)) lines.push(cur.replace(/[ \t]+$/, ""));
+    if (!(cur.trim() === "" && removedOnLine)) {
+      lines.push(cur.replace(/[ \t]+$/, ""));
+      origins.push(line);
+    }
     cur = "";
     removedOnLine = false;
   };
@@ -115,9 +132,10 @@ export function stripComments(path: string, content: string): string {
       } else {
         // docstring ではない文字列はそのまま残す(改行ごとに行を区切る)
         const parts = src.slice(i, stop).split("\n");
+        const first = currentLine();
         parts.forEach((part, k) => {
           cur += part;
-          if (k < parts.length - 1) endLine();
+          if (k < parts.length - 1) endLine(first + k);
         });
         i = stop;
       }
@@ -166,10 +184,15 @@ export function stripComments(path: string, content: string): string {
 
   // 連続する空行を 1 行にまとめ、先頭・末尾の空行を落とす
   const out: string[] = [];
-  for (const line of lines) {
-    if (line.trim() === "" && (out.length === 0 || out[out.length - 1].trim() === "")) continue;
+  const outOrigins: number[] = [];
+  lines.forEach((line, n) => {
+    if (line.trim() === "" && (out.length === 0 || out[out.length - 1].trim() === "")) return;
     out.push(line);
+    outOrigins.push(origins[n]);
+  });
+  while (out.length > 0 && out[out.length - 1].trim() === "") {
+    out.pop();
+    outOrigins.pop();
   }
-  while (out.length > 0 && out[out.length - 1].trim() === "") out.pop();
-  return out.join("\n");
+  return { content: out.join("\n"), lines: outOrigins };
 }

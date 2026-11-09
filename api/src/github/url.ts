@@ -2,7 +2,7 @@ export type RepoRef = { owner: string; repo: string };
 
 export class RepoError extends Error {
   constructor(
-    public code: "invalid_url" | "not_found" | "private" | "rate_limited" | "empty" | "upstream",
+    public code: "invalid_url" | "not_found" | "private" | "rate_limited" | "empty" | "upstream" | "no_authored" | "token_required",
     message: string,
   ) {
     super(message);

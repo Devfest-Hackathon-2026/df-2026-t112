@@ -10,6 +10,8 @@ export type Session = {
   uid?: string;
   /** 問題ごとの該当コード。 */
   snippets: Record<string, string>;
+  /** 特定の人が書いたコードから出題したときの、その人の GitHub ユーザー名。 */
+  author?: string;
   /** 続けて解いているとき、このクイズより前に出した問題。 */
   asked?: AskedQuestion[];
   /** 採点済みなら結果。再採点で Gemini を呼び直さないために保存する。 */

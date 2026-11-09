@@ -68,6 +68,19 @@ export function isCandidate(entry: TreeEntry, limits: Limits = LIMITS): boolean 
   return CODE_EXT.has(ext(entry.path)) || parts.length === 1;
 }
 
+/** 本人が書いた行を調べる対象のファイルか。題材になるコードだけを対象にする。 */
+export function isSourceFile(entry: TreeEntry, limits: Limits = LIMITS): boolean {
+  return isCandidate(entry, limits) && CODE_EXT.has(ext(entry.path));
+}
+
+export function isTestPath(path: string): boolean {
+  return TEST_RE.test(path);
+}
+
+export function testQuota(limits: Limits): number {
+  return Math.max(MIN_TEST_FILES, Math.floor(limits.maxFiles * TEST_FILE_RATIO));
+}
+
 /** 除外するとコードが残らないリポジトリ(サンプル集など)は、除外せずに読む。 */
 function candidates(tree: TreeEntry[], limits: Limits): TreeEntry[] {
   const strict = tree.filter((e) => isCandidate(e, limits));
@@ -98,8 +111,7 @@ export function selectFiles(tree: TreeEntry[], limits: Limits = LIMITS): { selec
   const estimate = (e: TreeEntry) => Math.min(e.size, limits.maxCharsPerFile);
 
   // テストの枠を先に確保する。本体で上限まで埋まっても、テストについての問題を作れるように
-  const testQuota = Math.max(MIN_TEST_FILES, Math.floor(limits.maxFiles * TEST_FILE_RATIO));
-  const tests = sorted.filter((e) => TEST_RE.test(e.path)).slice(0, testQuota);
+  const tests = sorted.filter((e) => TEST_RE.test(e.path)).slice(0, testQuota(limits));
   const main = sorted.filter((e) => !TEST_RE.test(e.path));
 
   const selected: TreeEntry[] = [];

@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ApiError, checkRepo } from "../api";
+import { ApiError, checkRepo, listAuthors } from "../api";
 import { checkDelay, checkFailure, type RepoCheckState } from "../repoCheck";
+import type { RepoAuthor } from "../types";
 import { Wordmark } from "./Wordmark";
 
-type Props = { onSubmit: (url: string) => void; error?: string | null };
+type Props = { onSubmit: (url: string, author?: string) => void; error?: string | null };
 
 export function RepoForm({ onSubmit, error }: Props) {
   const [url, setUrl] = useState("");
   const [check, setCheck] = useState<RepoCheckState>({ state: "idle" });
+  const [authors, setAuthors] = useState<RepoAuthor[]>([]);
+  const [author, setAuthor] = useState("");
   const pasted = useRef(false);
 
   useEffect(() => {
@@ -34,11 +37,27 @@ export function RepoForm({ onSubmit, error }: Props) {
     };
   }, [url]);
 
+  // 読めるリポジトリなら、コミットした人を選べるようにする。取得に失敗しても全体のクイズは作れる
+  useEffect(() => {
+    setAuthors([]);
+    setAuthor("");
+    if (check.state !== "ok") return;
+    const abort = new AbortController();
+    listAuthors(url.trim(), abort.signal)
+      .then((r) => {
+        if (!abort.signal.aborted) setAuthors(r.authors);
+      })
+      .catch(() => {});
+    return () => abort.abort();
+    // url の変化では check が先に idle に戻るので、check だけを追えばよい
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [check]);
+
   const blocked = check.state === "error";
 
   const handle = (e: FormEvent) => {
     e.preventDefault();
-    if (url.trim() && !blocked) onSubmit(url.trim());
+    if (url.trim() && !blocked) onSubmit(url.trim(), author || undefined);
   };
 
   return (
@@ -69,6 +88,19 @@ export function RepoForm({ onSubmit, error }: Props) {
         {check.state === "ok" && `✓ ${check.name}`}
         {check.state === "error" && check.message}
       </p>
+      {authors.length > 0 && (
+        <div className="scope">
+          <label htmlFor="scope-author">出題の範囲</label>
+          <select id="scope-author" value={author} onChange={(e) => setAuthor(e.target.value)}>
+            <option value="">リポジトリ全体</option>
+            {authors.map((a) => (
+              <option key={a.login} value={a.login}>
+                {a.login} が書いたコード({a.commits} コミット)
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <button type="submit" disabled={!url.trim() || blocked}>
         クイズを作る
       </button>

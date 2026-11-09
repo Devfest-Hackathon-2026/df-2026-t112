@@ -73,6 +73,11 @@ const llm: LlmClient = {
 const app = createApp({
   llm,
   fetchSnapshot: async () => snapshot,
+  listAuthors: async () => [
+    { login: "mock-user", commits: 12 },
+    { login: "another-user", commits: 3 },
+  ],
+  fetchAuthoredSnapshot: async () => ({ ...snapshot, authored: { "src/add.ts": [{ start: 1, end: 6 }] } }),
   // URL に missing や secret を含めると、入力欄のエラー表示を試せる
   checkRepo: async (url) => {
     if (url.includes("missing")) throw new RepoError("not_found", "リポジトリが見つかりません(非公開の可能性もあります)");

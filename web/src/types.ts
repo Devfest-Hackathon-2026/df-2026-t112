@@ -10,6 +10,8 @@ export type PublicQuestion = {
   hint: string;
 };
 
+export type RepoAuthor = { login: string; commits: number };
+
 export type RepoInfo = { owner: string; repo: string; branch: string; description: string | null };
 
 export type QuizSession = { sessionId: string; repo: RepoInfo; questions: PublicQuestion[] };
