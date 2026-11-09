@@ -15,7 +15,7 @@ const MAX_WEAKEST = 2;
 export function analyzeWeakness(results: Pick<GradeResult, "categories">[]): Weakness {
   const averages = {} as Record<Category, number | null>;
   for (const c of CATEGORIES) {
-    const values = results.map((r) => r.categories[c]).filter((v): v is number => v !== null);
+    const values = results.map((r) => r.categories[c]).filter((v): v is number => typeof v === "number"); // 過去の結果には新しいカテゴリの値が無い
     averages[c] = values.length === 0 ? null : Math.round(values.reduce((a, b) => a + b, 0) / values.length);
   }
   const weakest = CATEGORIES.filter((c): c is Category => averages[c] !== null && averages[c]! < WEAK_THRESHOLD)

@@ -206,14 +206,6 @@ button.block { display: block; width: 100%; }
 
 .slide { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
 .slide-meta { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
-.chip {
-  padding: 2px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  font-weight: 500;
-}
 .stars { color: var(--muted); font-size: 0.8125rem; letter-spacing: 0.05em; }
 .question-text { margin: 0; font-size: 1.25rem; font-weight: 400; line-height: 1.6; white-space: pre-wrap; }
 
@@ -309,15 +301,12 @@ button.choice.selected, button.choice.selected:hover:not(:disabled) { border-col
 .overall-score { font-size: 3.5rem; font-weight: 400; color: var(--accent); }
 .overall-unit { color: var(--muted); }
 
-.radar { width: 100%; max-width: 320px; height: auto; }
-.radar-ring { fill: none; stroke: var(--border); }
-.radar-axis { stroke: var(--border); }
-.radar-area { fill: var(--accent); fill-opacity: 0.2; stroke: var(--accent); stroke-width: 2; }
-.radar-dot { fill: var(--accent); }
-.radar-label { fill: var(--text); font-size: 12px; }
-.radar-value { fill: var(--accent); font-weight: 500; }
 
-.summary { white-space: pre-wrap; margin: 12px 0 0; text-align: left; }
+.summary p { margin: 0 0 6px; white-space: pre-wrap; }
+.summary h3 { margin: 20px 0 6px; font-size: 1rem; font-weight: 500; }
+.summary h3:first-child { margin-top: 0; }
+.result-retry { margin-bottom: 16px; text-align: center; }
+.result-retry .muted { margin: 8px 0 0; }
 
 .review { list-style: none; padding: 0; margin: 0; }
 .review li { padding: 12px 0; border-top: 1px solid var(--border); }
@@ -334,10 +323,6 @@ button.choice.selected, button.choice.selected:hover:not(:disabled) { border-col
 .auth { margin-left: auto; display: flex; gap: 12px; align-items: center; }
 .auth button.link { margin: 0; }
 
-.compare { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 0.875rem; }
-.compare th, .compare td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
-.compare th { color: var(--muted); font-weight: 500; }
-.compare tr.weak td { color: var(--danger); font-weight: 500; }
 
 @media (max-width: 559px) {
   .wordmark.large { font-size: 3.5rem; }
@@ -350,3 +335,6 @@ button.choice.selected, button.choice.selected:hover:not(:disabled) { border-col
   .slide-frame.from-next, .slide-frame.from-prev { animation: none; }
   .step::after, button, .search { transition: none; }
 }
+
+.explanation { margin: 4px 0 12px; }
+.explanation strong { color: var(--accent); font-size: 1.25rem; font-weight: 500; }

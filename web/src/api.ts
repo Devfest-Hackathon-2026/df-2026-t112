@@ -1,6 +1,6 @@
 import { accessHeaders } from "./access";
 import { authHeaders } from "./auth";
-import type { Answers, Category, GlobalStats, GradeResult, QuizSession, Weakness } from "./types";
+import type { Answers, GradeResult, QuizSession } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -37,13 +37,12 @@ async function request<T>(path: string, body?: unknown, signal?: AbortSignal): P
 export const checkRepo = (url: string, signal?: AbortSignal) =>
   request<{ owner: string; repo: string; description: string | null }>("/api/repo/check", { url }, signal);
 
-export const createQuiz = (url: string, focus: Category[] = []) =>
-  request<QuizSession>("/api/quiz", { url, focus });
+export const createQuiz = (url: string) => request<QuizSession>("/api/quiz", { url });
+
+export const retryQuiz = (sessionId: string) => request<QuizSession>(`/api/quiz/${sessionId}/retry`, {});
 
 export const getQuiz = (sessionId: string) => request<QuizSession>(`/api/quiz/${sessionId}`);
 
 export const gradeQuiz = (sessionId: string, answers: Answers) =>
   request<GradeResult>(`/api/quiz/${sessionId}/grade`, { answers });
 
-export const getStats = () => request<GlobalStats>("/api/stats");
-export const getWeakness = () => request<Weakness>("/api/weakness");

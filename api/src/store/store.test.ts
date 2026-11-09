@@ -11,7 +11,8 @@ const quiz = {
 
 const result = (categories: Partial<GradeResult["categories"]>): GradeResult => ({
   overall: 0,
-  categories: { reading: null, design: null, knowledge: null, quality: null, overall: null, ...categories },
+  explanation: null,
+  categories: { reading: null, design: null, knowledge: null, quality: null, security: null, ...categories },
   summary: "s",
   questions: [],
 });
@@ -59,7 +60,7 @@ describe("MemoryStatsStore", () => {
     await stats.record(result({ reading: 50 }));
     expect(await stats.get()).toEqual({
       count: 2,
-      averages: { reading: 75, design: 20, knowledge: null, quality: null, overall: null },
+      averages: { reading: 75, design: 20, knowledge: null, quality: null, security: null },
     });
   });
 });

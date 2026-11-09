@@ -3,6 +3,7 @@ import type { Quiz } from "../quiz/types.js";
 import { reviewQuiz } from "./review.js";
 import {
   categoryScores,
+  explanationScore,
   gradeChoice,
   overallScore,
   type Answer,
@@ -13,6 +14,8 @@ import {
 export type GradeResult = {
   overall: number;
   categories: CategoryScores;
+  /** 説明力(記述式の平均)。記述式が無ければ null。 */
+  explanation: number | null;
   summary: string;
   questions: QuestionResult[];
 };
@@ -38,5 +41,5 @@ export async function gradeQuiz(
   const byId = new Map([...choiceResults, ...freeResults].map((r) => [r.id, r]));
   const questions = quiz.questions.map((q) => byId.get(q.id)!);
   const categories = categoryScores(questions);
-  return { overall: overallScore(categories), categories, summary, questions };
+  return { overall: overallScore(categories), categories, explanation: explanationScore(questions), summary, questions };
 }

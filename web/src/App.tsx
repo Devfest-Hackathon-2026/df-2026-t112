@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
-import { ApiError, createQuiz, getQuiz, gradeQuiz } from "./api";
+import { ApiError, createQuiz, getQuiz, gradeQuiz, retryQuiz } from "./api";
 import { AuthButton } from "./components/AuthButton";
 import { QuizView } from "./components/QuizView";
 import { RepoForm } from "./components/RepoForm";
 import { ResultView } from "./components/ResultView";
 import { Wordmark } from "./components/Wordmark";
 import { clearProgress, loadProgress, saveProgress } from "./persist";
-import type { Answers, Category, GradeResult, QuizSession } from "./types";
+import type { Answers, GradeResult, QuizSession } from "./types";
 
 type Phase =
   | { name: "input" }
-  | { name: "loading"; url: string }
+  | { name: "loading"; url: string; message?: string }
   | { name: "quiz"; session: QuizSession; submitting: boolean }
   | { name: "result"; session: QuizSession; result: GradeResult };
 
@@ -48,20 +48,35 @@ export function App() {
     setPhase({ name: "input" });
   };
 
-  const start = async (url: string, focus: Category[] = []) => {
+  /** クイズを作って開く。失敗したら onFail の画面に戻す(前の結果を消さないよう、保存は成功してから上書きする)。 */
+  const openQuiz = async (create: () => Promise<QuizSession>, loading: Phase, onFail: Phase) => {
     setError(null);
-    clearProgress();
-    setAnswers({});
-    setPhase({ name: "loading", url });
+    setPhase(loading);
     try {
-      const session = await createQuiz(url, focus);
+      const session = await create();
+      setAnswers({});
       saveProgress({ session, answers: {} });
       setPhase({ name: "quiz", session, submitting: false });
     } catch (e) {
       setError(messageOf(e));
-      setPhase({ name: "input" });
+      setPhase(onFail);
     }
   };
+
+  const start = (url: string) => openQuiz(() => createQuiz(url), { name: "loading", url }, { name: "input" });
+
+  const retry = (session: QuizSession, result: GradeResult) =>
+    openQuiz(
+      () => retryQuiz(session.sessionId),
+      {
+        name: "loading",
+        url: `${session.repo.owner}/${session.repo.repo}`,
+        message: result.questions.every((r) => r.correct)
+          ? "まだ解いていない問題を作っています…"
+          : "間違えた問題から類似問題を作っています…",
+      },
+      { name: "result", session, result },
+    );
 
   const submit = async (session: QuizSession, answers: Answers) => {
     setError(null);
@@ -95,7 +110,7 @@ export function App() {
       {phase.name === "loading" && (
         <div className="loading" aria-live="polite">
           <div className="spinner" />
-          <p>コードを読んで問題を作っています…</p>
+          <p>{phase.message ?? "コードを読んで問題を作っています…"}</p>
           <p className="muted">{phase.url}</p>
         </div>
       )}
@@ -118,7 +133,8 @@ export function App() {
           session={phase.session}
           result={phase.result}
           onRestart={restart}
-          onRetry={(focus) => start(`https://github.com/${phase.session.repo.owner}/${phase.session.repo.repo}`, focus)}
+          onRetry={() => retry(phase.session, phase.result)}
+          error={error}
         />
       )}
       </main>

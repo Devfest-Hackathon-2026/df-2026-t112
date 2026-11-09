@@ -42,7 +42,7 @@ for (const url of urls) {
 
   if (!llm) {
     // 分割した呼び出しのうち 1 回分のプロンプト(各回ほぼ同じ大きさ)
-    const { system, user } = buildQuizPrompt(snap, planChunks([], profile)[0]);
+    const { system, user } = buildQuizPrompt(snap, planChunks(profile)[0]);
     console.log(`prompt chars per request: system ${system.length} + user ${user.length} (x${profile.chunks} requests)`);
     continue;
   }

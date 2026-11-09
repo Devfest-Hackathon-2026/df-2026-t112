@@ -29,7 +29,7 @@ export class MemoryStatsStore implements StatsStore {
     this.totals.count++;
     for (const c of CATEGORIES) {
       const v = result.categories[c];
-      if (v === null) continue;
+      if (typeof v !== "number") continue;
       this.totals.sum[c] += v;
       this.totals.n[c]++;
     }

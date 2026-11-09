@@ -9,25 +9,20 @@ export type ChunkSpec = {
   free: Category[];
 };
 
-const DEFAULT_FREE: Category[] = ["design", "quality", "overall"];
-
-/** 選択式のカテゴリ配分。通常は均等(余りは先頭のカテゴリから)。重点カテゴリがあれば、そこを 1 問ずつ増やす。 */
-export function choiceCounts(total: number, focus: Category[]): Record<Category, number> {
+/** 選択式のカテゴリ配分。均等にして、余りは先頭のカテゴリから割り当てる。 */
+export function choiceCounts(total: number): Record<Category, number> {
   const base = Math.floor(total / CATEGORIES.length);
-  const counts = Object.fromEntries(
+  return Object.fromEntries(
     CATEGORIES.map((c, i) => [c, base + (i < total % CATEGORIES.length ? 1 : 0)]),
   ) as Record<Category, number>;
-  for (const f of [...new Set(focus)].slice(0, 2)) {
-    const donor = CATEGORIES.filter((c) => !focus.includes(c)).sort((a, b) => counts[b] - counts[a])[0];
-    if (!donor || counts[donor] <= 1) continue;
-    counts[donor]--;
-    counts[f]++;
-  }
-  return counts;
 }
 
-export function planChunks(focus: Category[] = [], profile: Profile = profileFromEnv()): ChunkSpec[] {
-  const counts = choiceCounts(profile.choice, focus);
+/** freeOffset は記述式を割り当て始めるカテゴリの位置。テストで固定するときだけ指定する。 */
+export function planChunks(
+  profile: Profile = profileFromEnv(),
+  freeOffset: number = Math.floor(Math.random() * CATEGORIES.length),
+): ChunkSpec[] {
+  const counts = choiceCounts(profile.choice);
 
   // 同じカテゴリが 1 つのチャンクに偏らないよう、カテゴリを巡回させて並べてから配る
   const ordered: Category[] = [];
@@ -40,7 +35,8 @@ export function planChunks(focus: Category[] = [], profile: Profile = profileFro
     }
   }
 
-  const freeCats = [...new Set([...focus, ...DEFAULT_FREE])].slice(0, profile.free);
+  // 記述式は点が下がりやすいので、特定のカテゴリに偏らないよう巡回して割り当てる
+  const freeCats = Array.from({ length: profile.free }, (_, i) => CATEGORIES[(freeOffset + i) % CATEGORIES.length]);
   const chunks: ChunkSpec[] = Array.from({ length: profile.chunks }, () => ({ choice: [], free: [] }));
   ordered.forEach((c, i) => chunks[i % profile.chunks].choice.push(c));
   freeCats.forEach((c, i) => chunks[i % profile.chunks].free.push(c));
