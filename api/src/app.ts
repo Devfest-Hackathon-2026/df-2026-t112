@@ -3,6 +3,12 @@ import { accessCheck, accessPassword } from "./accessPassword.js";
 import { authMiddleware, type AuthUser, type AuthVariables, type Authenticator } from "./auth.js";
 import type { RepoSize } from "./github/filter.js";
 import { checkRepo, fetchRepoSnapshot, type RepoCheck, type RepoSnapshot } from "./github/snapshot.js";
+import {
+  fetchAuthoredSnapshot,
+  isGithubLogin,
+  listAuthors,
+  type RepoAuthor,
+} from "./github/authorship.js";
 import { RepoError } from "./github/url.js";
 import { LlmError, createGeminiClient, type LlmClient } from "./llm/client.js";
 import { gradeQuiz } from "./grading/grade.js";
@@ -23,6 +29,10 @@ export type Deps = {
   llm?: LlmClient;
   /** userToken はログイン済みユーザー本人の GitHub トークン。あれば非公開リポジトリも読む。 */
   fetchSnapshot: (url: string, userToken?: string) => Promise<RepoSnapshot>;
+  /** リポジトリにコミットした人の一覧。 */
+  listAuthors: (url: string, userToken?: string) => Promise<RepoAuthor[]>;
+  /** login が書いたコードを読む。 */
+  fetchAuthoredSnapshot: (url: string, login: string, userToken?: string) => Promise<RepoSnapshot>;
   /** 入力欄の即時チェック用。リポジトリを読めるかどうかだけを確かめる。 */
   checkRepo: (url: string, userToken?: string) => Promise<RepoCheck>;
   /** 未指定なら認証なし(匿名のみ)。 */
@@ -40,6 +50,8 @@ const REPO_ERROR_STATUS = {
   rate_limited: 429,
   empty: 422,
   upstream: 502,
+  no_authored: 422,
+  token_required: 503,
 } as const;
 
 export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVariables }> {
@@ -51,6 +63,16 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     llm: partial.llm,
     auth: partial.auth,
     profile: fixedProfile,
+    listAuthors:
+      partial.listAuthors ??
+      ((url, userToken) =>
+        userToken ? listAuthors(url, { token: userToken, allowPrivate: true }) : listAuthors(url, { token: process.env.GITHUB_TOKEN })),
+    fetchAuthoredSnapshot:
+      partial.fetchAuthoredSnapshot ??
+      ((url, login, userToken) =>
+        userToken
+          ? fetchAuthoredSnapshot(url, login, { token: userToken, allowPrivate: true, limits })
+          : fetchAuthoredSnapshot(url, login, { token: process.env.GITHUB_TOKEN, limits })),
     checkRepo:
       partial.checkRepo ??
       ((url, userToken) =>
@@ -62,6 +84,10 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
           ? fetchRepoSnapshot(url, { token: userToken, allowPrivate: true, limits })
           : fetchRepoSnapshot(url, { token: process.env.GITHUB_TOKEN, limits })),
   };
+  /** author を指定すると、その人が書いたコードだけを題材にする。 */
+  const readRepo = (url: string, author: string | undefined, userToken: string | undefined) =>
+    author ? deps.fetchAuthoredSnapshot(url, author, userToken) : deps.fetchSnapshot(url, userToken);
+
   /** 固定されていなければ、切り詰める前の本体のコードの総量で問題数を決める。 */
   const profileFor = (snap: RepoSnapshot): Profile =>
     deps.profile ??
@@ -95,7 +121,13 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
   app.get("/api/health", (c) => c.json({ ok: true }));
 
   // 入力のたびに呼ばれるので、共有の GitHub トークンを使い切らないように回数を絞る
-  app.post("/api/repo/check", rateLimit({ limit: Number(process.env.REPO_CHECK_PER_HOUR ?? 300), windowMs: 60 * 60 * 1000 }));
+  const repoLookup = rateLimit({ limit: Number(process.env.REPO_CHECK_PER_HOUR ?? 300), windowMs: 60 * 60 * 1000 });
+  app.post("/api/repo/check", repoLookup);
+  app.post("/api/repo/authors", repoLookup);
+  app.post("/api/repo/authors", async (c) => {
+    const body = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
+    return c.json({ authors: await deps.listAuthors(String(body.url ?? ""), c.get("githubToken")) });
+  });
   app.post("/api/repo/check", async (c) => {
     const body = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
     return c.json(await deps.checkRepo(String(body.url ?? ""), c.get("githubToken")));
@@ -121,15 +153,19 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
   app.post("/api/quiz/:id/retry", expensive);
 
   app.post("/api/quiz", async (c) => {
-    const body = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
+    const body = await c.req.json<{ url?: string; author?: unknown }>().catch(() => ({}) as { url?: string; author?: unknown });
+    const author = typeof body.author === "string" && body.author !== "" ? body.author : undefined;
+    if (author !== undefined && !isGithubLogin(author)) {
+      return c.json({ error: "invalid_author", message: "GitHub のユーザー名の形式が正しくありません" }, 400);
+    }
     const t0 = Date.now();
-    const snap = await deps.fetchSnapshot(String(body.url ?? ""), c.get("githubToken"));
+    const snap = await readRepo(String(body.url ?? ""), author, c.get("githubToken"));
     const chars = snap.files.reduce((n, f) => n + f.content.length, 0);
     console.log(`[quiz] ${snap.owner}/${snap.repo}: fetched ${snap.files.length} files, ${chars} chars in ${Date.now() - t0}ms`);
     const quiz = await generateQuiz(snap, getLlm(), { profile: profileFor(snap), log: (m) => console.log(`[quiz] ${m}`) });
     console.log(`[quiz] done in ${Date.now() - t0}ms`);
     const snippets = snippetsFor(quiz, snap.files);
-    const session = await deps.store.create({ quiz, snippets, uid: c.get("user")?.uid });
+    const session = await deps.store.create({ quiz, snippets, author, uid: c.get("user")?.uid });
     return c.json({ sessionId: session.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });
   });
 
@@ -167,13 +203,13 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     const log = (m: string) => console.log(`[retry] ${m}`);
 
     const { owner, repo } = session.quiz.repo;
-    const snap = await deps.fetchSnapshot(`https://github.com/${owner}/${repo}`, c.get("githubToken"));
+    const snap = await readRepo(`https://github.com/${owner}/${repo}`, session.author, c.get("githubToken"));
     const quiz =
       missed.length > 0
         ? await generateSimilarQuiz(snap, getLlm(), missed, { asked, log })
         : await generateQuiz(snap, getLlm(), { profile: profileFor(snap).name === "tiny" ? PROFILES.tiny : PROFILES.mini, asked, log });
     const snippets = snippetsFor(quiz, snap.files);
-    const next = await deps.store.create({ quiz, snippets, asked, uid: c.get("user")?.uid });
+    const next = await deps.store.create({ quiz, snippets, asked, author: session.author, uid: c.get("user")?.uid });
     return c.json({ sessionId: next.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });
   });
 

@@ -3,6 +3,8 @@ import { LIMITS, measureSource, selectFiles, type Limits, type RepoSize, type Tr
 import { RepoError, parseRepoUrl } from "./url.js";
 
 export type RepoFile = { path: string; content: string };
+export type LineRange = { start: number; end: number };
+
 export type RepoSnapshot = {
   owner: string;
   repo: string;
@@ -12,6 +14,8 @@ export type RepoSnapshot = {
   skipped: number;
   /** 切り詰める前の、本体のコードの総量。 */
   size?: RepoSize;
+  /** 特定の人が書いたコードから出題するときの、その人の行(ファイルごと)。 */
+  authored?: Record<string, LineRange[]>;
 };
 
 export type FetchOptions = {
@@ -33,7 +37,7 @@ type RepoMeta = { default_branch: string; description: string | null; private: b
 
 const API = "https://api.github.com";
 
-function githubClient(opts: FetchOptions) {
+export function githubClient(opts: FetchOptions) {
   const f = opts.fetchImpl ?? fetch;
   const headers: Record<string, string> = { "User-Agent": "evc-app", Accept: "application/vnd.github+json" };
   if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
@@ -46,6 +50,8 @@ function githubClient(opts: FetchOptions) {
       throw new RepoError("rate_limited", "GitHub API の制限に達しました。しばらくしてから再度お試しください");
     }
     if (!res.ok) throw new RepoError("upstream", `GitHub API エラー (${res.status})`);
+    // 空のリポジトリなどは 204 で本文が無い
+    if (res.status === 204) return [] as T;
     return (await res.json()) as T;
   };
 
@@ -55,7 +61,19 @@ function githubClient(opts: FetchOptions) {
     return meta;
   };
 
-  return { f, headers, getJson, getMeta };
+  const getFile = async (owner: string, repo: string, branch: string, path: string): Promise<string> => {
+    const ref = encodeURIComponent(branch);
+    const encoded = path.split("/").map(encodeURIComponent).join("/");
+    const res = opts.token
+      ? await f(`${API}/repos/${owner}/${repo}/contents/${encoded}?ref=${ref}`, {
+          headers: { ...headers, Accept: "application/vnd.github.raw+json" },
+        })
+      : await f(`https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${encoded}`);
+    if (!res.ok) throw new RepoError("upstream", `ファイル取得に失敗しました: ${path}`);
+    return res.text();
+  };
+
+  return { f, headers, getJson, getMeta, getFile };
 }
 
 /** ファイルは取得せず、リポジトリを読めるかどうかだけを確かめる(入力欄の即時チェック用)。 */
@@ -67,7 +85,7 @@ export async function checkRepo(urlInput: string, opts: FetchOptions = {}): Prom
 
 export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {}): Promise<RepoSnapshot> {
   const { owner, repo } = parseRepoUrl(urlInput);
-  const { f, headers, getJson, getMeta } = githubClient(opts);
+  const { getJson, getMeta, getFile } = githubClient(opts);
 
   const meta = await getMeta(owner, repo);
 
@@ -82,18 +100,9 @@ export async function fetchRepoSnapshot(urlInput: string, opts: FetchOptions = {
   const { selected, skipped } = selectFiles(entries, limits);
   if (selected.length === 0) throw new RepoError("empty", "解析できるソースコードが見つかりませんでした");
 
-  const branch = encodeURIComponent(meta.default_branch);
-  const fetchContent = async (path: string): Promise<string> => {
-    const encoded = path.split("/").map(encodeURIComponent).join("/");
-    const res = opts.token
-      ? await f(`${API}/repos/${owner}/${repo}/contents/${encoded}?ref=${branch}`, {
-          headers: { ...headers, Accept: "application/vnd.github.raw+json" },
-        })
-      : await f(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encoded}`);
-    if (!res.ok) throw new RepoError("upstream", `ファイル取得に失敗しました: ${path}`);
+  const fetchContent = async (path: string): Promise<string> =>
     // コメントに答えが書かれていることがあるため、画面にも AI にも渡す前に除く(行番号は除去後のもの)
-    return stripComments(path, await res.text()).slice(0, limits.maxCharsPerFile);
-  };
+    stripComments(path, await getFile(owner, repo, meta.default_branch, path)).slice(0, limits.maxCharsPerFile);
 
   const files = await Promise.all(selected.map(async (e) => ({ path: e.path, content: await fetchContent(e.path) })));
   return { owner, repo, branch: meta.default_branch, description: meta.description, files, skipped, size };

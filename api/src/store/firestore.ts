@@ -26,6 +26,7 @@ export function serializeSession(s: Session) {
     repo: `${s.quiz.repo.owner}/${s.quiz.repo.repo}`,
     quiz: JSON.stringify(s.quiz),
     snippets: JSON.stringify(s.snippets),
+    author: s.author ?? null,
     asked: s.asked ? JSON.stringify(s.asked) : null,
     result: s.result ? JSON.stringify(s.result) : null,
   };
@@ -38,6 +39,7 @@ export function deserializeSession(id: string, d: Record<string, unknown>): Sess
     uid: typeof d.uid === "string" ? d.uid : undefined,
     quiz: JSON.parse(String(d.quiz)),
     snippets: JSON.parse(String(d.snippets)),
+    author: typeof d.author === "string" ? d.author : undefined,
     asked: typeof d.asked === "string" ? JSON.parse(d.asked) : undefined,
     result: typeof d.result === "string" ? JSON.parse(d.result) : undefined,
   };

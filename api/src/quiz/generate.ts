@@ -43,6 +43,16 @@ export function findRepeated(questions: GeneratedQuestion[], asked: AskedQuestio
   return repeated ? `過去に出した問題と同じ問題があります: ${repeated.question.slice(0, 80)}` : null;
 }
 
+/** 特定の人のコードから出題するとき、問題がその人の行を問うているか。 */
+export function findOutsideAuthored(questions: GeneratedQuestion[], authored: RepoSnapshot["authored"]): string | null {
+  if (!authored) return null;
+  const outside = questions.find((q) => {
+    const { path, startLine, endLine } = q.codeRef;
+    return !authored[path]?.some((r) => r.start <= endLine && startLine <= r.end);
+  });
+  return outside ? `本人が書いていない行の問題があります(* の行だけを問うてください): ${outside.codeRef.path} L${outside.codeRef.startLine}-${outside.codeRef.endLine}` : null;
+}
+
 export type GenerateOptions = {
   /** クイズの大きさ。未指定なら環境変数 QUIZ_PROFILE(既定は mini)。 */
   profile?: Profile;
@@ -85,7 +95,10 @@ async function generateChunk(
         .map((i) => `${i.path.join(".")}: ${i.message}`)
         .join("; ");
     } else {
-      const problem = checkShape(parsed.data.questions, spec) ?? findRepeated(parsed.data.questions, [...(context.asked ?? []), ...(context.sameQuiz ?? [])]);
+      const problem =
+        checkShape(parsed.data.questions, spec) ??
+        findRepeated(parsed.data.questions, [...(context.asked ?? []), ...(context.sameQuiz ?? [])]) ??
+        findOutsideAuthored(parsed.data.questions, snap.authored);
       if (!problem) return parsed.data.questions;
       lastProblem = problem;
     }

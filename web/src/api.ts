@@ -1,6 +1,6 @@
 import { accessHeaders } from "./access";
 import { authHeaders } from "./auth";
-import type { Answers, GradeResult, QuizSession } from "./types";
+import type { Answers, GradeResult, QuizSession, RepoAuthor } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -37,7 +37,11 @@ async function request<T>(path: string, body?: unknown, signal?: AbortSignal): P
 export const checkRepo = (url: string, signal?: AbortSignal) =>
   request<{ owner: string; repo: string; description: string | null }>("/api/repo/check", { url }, signal);
 
-export const createQuiz = (url: string) => request<QuizSession>("/api/quiz", { url });
+export const listAuthors = (url: string, signal?: AbortSignal) =>
+  request<{ authors: RepoAuthor[] }>("/api/repo/authors", { url }, signal);
+
+/** author を指定すると、その人が書いたコードから出題する。 */
+export const createQuiz = (url: string, author?: string) => request<QuizSession>("/api/quiz", { url, author });
 
 export const retryQuiz = (sessionId: string) => request<QuizSession>(`/api/quiz/${sessionId}/retry`, {});
 

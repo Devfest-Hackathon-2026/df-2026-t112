@@ -338,3 +338,17 @@ button.choice.selected, button.choice.selected:hover:not(:disabled) { border-col
 
 .explanation { margin: 4px 0 12px; }
 .explanation strong { color: var(--accent); font-size: 1.25rem; font-weight: 500; }
+
+.scope { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 16px; }
+.scope label { color: var(--muted); font-size: 0.875rem; flex: none; }
+.scope select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+}

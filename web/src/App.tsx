@@ -63,7 +63,12 @@ export function App() {
     }
   };
 
-  const start = (url: string) => openQuiz(() => createQuiz(url), { name: "loading", url }, { name: "input" });
+  const start = (url: string, author?: string) =>
+    openQuiz(
+      () => createQuiz(url, author),
+      { name: "loading", url, message: author ? `${author} が書いたコードから問題を作っています…` : undefined },
+      { name: "input" },
+    );
 
   const retry = (session: QuizSession, result: GradeResult) =>
     openQuiz(
