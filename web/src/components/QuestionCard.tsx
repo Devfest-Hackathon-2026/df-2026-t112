@@ -15,8 +15,11 @@ export function QuestionCard({ index, question: q, answer, onChange, disabled }:
   return (
     <section className={q.snippet ? "slide" : "slide no-code"}>
       <div className="slide-question">
-        <p className="muted slide-meta">
-          {CATEGORY_LABELS[q.category]} ・ {"★".repeat(q.difficulty)}
+        <p className="slide-meta">
+          <span className="chip">{CATEGORY_LABELS[q.category]}</span>
+          <span className="stars" aria-label={`難易度 ${q.difficulty}`}>
+            {"★".repeat(q.difficulty)}
+          </span>
         </p>
         <h2 className="question-text">{q.question}</h2>
       </div>

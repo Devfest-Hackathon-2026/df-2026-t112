@@ -4,6 +4,7 @@ import { AuthButton } from "./components/AuthButton";
 import { QuizView } from "./components/QuizView";
 import { RepoForm } from "./components/RepoForm";
 import { ResultView } from "./components/ResultView";
+import { Wordmark } from "./components/Wordmark";
 import { clearProgress, loadProgress, saveProgress } from "./persist";
 import type { Answers, Category, GradeResult, QuizSession } from "./types";
 
@@ -77,13 +78,19 @@ export function App() {
   };
 
   return (
-    <main className={phase.name === "quiz" ? "wide" : undefined}>
-      <header className="app-header">
-        <h1>EVC</h1>
-        <span className="muted">Escape VibeCoder</span>
+    <>
+      {/* 入口には大きなロゴがあるので、上部のバーには出さない */}
+      <header className={phase.name === "input" ? "app-bar plain" : "app-bar"}>
+        {phase.name !== "input" && (
+          <>
+            <Wordmark />
+            <span className="muted">Escape VibeCoder</span>
+          </>
+        )}
         <AuthButton />
       </header>
 
+      <main className={phase.name === "quiz" ? "wide" : undefined}>
       {phase.name === "input" && <RepoForm onSubmit={start} error={error} />}
       {phase.name === "loading" && (
         <div className="loading" aria-live="polite">
@@ -114,6 +121,7 @@ export function App() {
           onRetry={(focus) => start(`https://github.com/${phase.session.repo.owner}/${phase.session.repo.repo}`, focus)}
         />
       )}
-    </main>
+      </main>
+    </>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, checkRepo } from "../api";
 import { checkDelay, checkFailure, type RepoCheckState } from "../repoCheck";
+import { Wordmark } from "./Wordmark";
 
 type Props = { onSubmit: (url: string) => void; error?: string | null };
 
@@ -42,14 +43,19 @@ export function RepoForm({ onSubmit, error }: Props) {
 
   return (
     <form className="hero" onSubmit={handle}>
-      <h2>そのコード、説明できますか?</h2>
-      <p className="muted">GitHub のリポジトリを入力すると、AI がコードを読んでクイズを作ります。</p>
-      <div className="url-row">
+      <h1>
+        <Wordmark large />
+      </h1>
+      <p className="hero-tag">そのコード、説明できますか?</p>
+      <div className={blocked ? "search invalid" : "search"}>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+        </svg>
         <input
           type="text"
           aria-label="リポジトリ URL"
           aria-invalid={blocked}
-          placeholder="https://github.com/owner/repo"
+          placeholder="GitHub のリポジトリ URL を入力"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onPaste={() => {
@@ -57,16 +63,17 @@ export function RepoForm({ onSubmit, error }: Props) {
           }}
           autoFocus
         />
-        <button type="submit" disabled={!url.trim() || blocked}>
-          クイズを作る
-        </button>
       </div>
       <p className={`url-status${blocked ? " error" : check.state === "ok" ? " ok" : ""}`} role="status">
         {check.state === "checking" && "確認しています…"}
         {check.state === "ok" && `✓ ${check.name}`}
         {check.state === "error" && check.message}
       </p>
+      <button type="submit" disabled={!url.trim() || blocked}>
+        クイズを作る
+      </button>
       {error && <p className="error" role="alert">{error}</p>}
+      <p className="muted hero-help">AI がコードを読んで、理解度をチェックするクイズを作ります。</p>
     </form>
   );
 }
