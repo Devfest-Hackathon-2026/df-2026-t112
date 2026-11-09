@@ -1,15 +1,15 @@
 import { z } from "zod";
 
 /** レーダーチャートの 5 軸。 */
-export const CATEGORIES = ["reading", "design", "knowledge", "quality", "overall"] as const;
+export const CATEGORIES = ["reading", "design", "knowledge", "quality", "security"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   reading: "コード読解",
-  design: "設計・構造",
+  design: "設計・全体理解",
   knowledge: "言語/FW知識",
-  quality: "エラー処理・品質",
-  overall: "全体理解",
+  quality: "エラー処理・テスト",
+  security: "セキュリティ",
 };
 
 export const questionSchema = z
@@ -47,6 +47,9 @@ export type GeneratedQuestion = z.infer<typeof questionSchema>;
 export const generatedQuizSchema = z.object({ questions: z.array(questionSchema) });
 
 export type Question = GeneratedQuestion & { id: string };
+
+/** これまでに出した問題。続けて解くときに、同じ問題を出さないために使う。 */
+export type AskedQuestion = { question: string; path: string; startLine: number; endLine: number };
 
 export type Quiz = {
   repo: { owner: string; repo: string; branch: string; description: string | null };

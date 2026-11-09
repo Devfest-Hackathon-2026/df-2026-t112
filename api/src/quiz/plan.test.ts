@@ -10,7 +10,7 @@ describe("planChunks (full)", () => {
   const full = PROFILES.full;
 
   it("splits 15 choice + 3 free into balanced chunks, 3 per category", () => {
-    const chunks = planChunks([], full);
+    const chunks = planChunks(full);
     expect(chunks).toHaveLength(3);
     expect(total(chunks, "choice")).toBe(15);
     expect(total(chunks, "free")).toBe(3);
@@ -24,39 +24,22 @@ describe("planChunks (full)", () => {
     expect(new Set(chunks.flatMap((c) => c.free)).size).toBe(3);
   });
 
-  it("shifts questions toward focus categories without changing the total", () => {
-    const counts = choiceCounts(15, ["design", "quality"]);
-    expect(counts.design).toBe(4);
-    expect(counts.quality).toBe(4);
-    expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(15);
-
-    const chunks = planChunks(["design", "quality"], full);
-    expect(total(chunks, "choice")).toBe(15);
-    expect(total(chunks, "free")).toBe(3);
-    expect(chunks.flatMap((c) => c.free)).toEqual(expect.arrayContaining(["design", "quality"]));
-  });
 });
 
 describe("planChunks (mini)", () => {
   const mini = PROFILES.mini;
 
   it("makes a single request with one choice question per category plus one free question", () => {
-    const chunks = planChunks([], mini);
+    const chunks = planChunks(mini);
     expect(chunks).toHaveLength(1);
     expect(chunks[0].choice).toEqual([...CATEGORIES]);
     expect(chunks[0].free).toHaveLength(1);
-  });
-
-  it("keeps one choice question per category and applies focus to the free question only", () => {
-    const [chunk] = planChunks(["quality"], mini);
-    expect(chunk.choice).toEqual([...CATEGORIES]);
-    expect(chunk.free).toEqual(["quality"]);
   });
 });
 
 describe("planChunks (standard)", () => {
   it("makes 2 requests of 5 choice + 1 free, 2 choice questions per category", () => {
-    const chunks = planChunks([], PROFILES.standard);
+    const chunks = planChunks(PROFILES.standard);
     expect(chunks).toHaveLength(2);
     for (const c of chunks) {
       expect(c.choice).toHaveLength(5);
@@ -69,12 +52,25 @@ describe("planChunks (standard)", () => {
   });
 });
 
+describe("free question rotation", () => {
+  it("starts at the given category and wraps around", () => {
+    const free = (offset: number) => planChunks(PROFILES.standard, offset).flatMap((c) => c.free);
+    expect(free(0)).toEqual(["reading", "design"]);
+    expect(free(4)).toEqual(["security", "reading"]);
+  });
+
+  it("can give free questions to every category", () => {
+    const seen = CATEGORIES.map((_, offset) => planChunks(PROFILES.mini, offset)[0].free[0]);
+    expect(new Set(seen)).toEqual(new Set(CATEGORIES));
+  });
+});
+
 describe("choiceCounts", () => {
   it("spreads a remainder over the first categories", () => {
-    const counts = choiceCounts(7, []);
+    const counts = choiceCounts(7);
     expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(7);
     expect(counts.reading).toBe(2);
-    expect(counts.overall).toBe(1);
+    expect(counts.security).toBe(1);
   });
 });
 

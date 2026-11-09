@@ -1,12 +1,11 @@
-import { CATEGORY_LABELS, type Category, type GradeResult, type QuizSession } from "../types";
-import { RadarChart } from "./RadarChart";
-import { WeaknessPanel } from "./WeaknessPanel";
+import type { GradeResult, QuizSession } from "../types";
 
 type Props = {
   session: QuizSession;
   result: GradeResult;
   onRestart: () => void;
-  onRetry: (focus: Category[]) => void;
+  onRetry: () => void;
+  error?: string | null;
 };
 
 function level(score: number): string {
@@ -16,9 +15,23 @@ function level(score: number): string {
   return "もう一度コードを読み直しましょう";
 }
 
-export function ResultView({ session, result, onRestart, onRetry }: Props) {
+/** 総評は「【見出し】」の行で区切られている。見出しだけを強調する。 */
+function Summary({ text }: { text: string }) {
+  return (
+    <div className="summary">
+      {text.split("\n").map((line, i) => {
+        const trimmed = line.trim();
+        if (!trimmed) return null;
+        return /^【.+】$/.test(trimmed) ? <h3 key={i}>{trimmed}</h3> : <p key={i}>{line}</p>;
+      })}
+    </div>
+  );
+}
+
+export function ResultView({ session, result, onRestart, onRetry, error }: Props) {
   const qById = new Map(session.questions.map((q, i) => [q.id, { q, no: i + 1 }]));
   const correct = result.questions.filter((r) => r.correct).length;
+  const missed = result.questions.length - correct;
 
   return (
     <div className="result">
@@ -31,11 +44,30 @@ export function ResultView({ session, result, onRestart, onRetry }: Props) {
           <span className="overall-unit"> / 100</span>
         </p>
         <p>{level(result.overall)}</p>
-        <RadarChart scores={result.categories} />
-        <p className="summary">{result.summary}</p>
+        {result.explanation != null && (
+          <p className="explanation">
+            説明力 <strong>{result.explanation}</strong>
+            <span className="muted"> / 100(記述式の得点)</span>
+          </p>
+        )}
       </section>
 
-      <WeaknessPanel categories={result.categories} onRetry={onRetry} />
+      <section className="card">
+        <h2>総評</h2>
+        <Summary text={result.summary} />
+      </section>
+
+      <div className="result-retry">
+        {error && <p className="error" role="alert">{error}</p>}
+        <button className="primary" onClick={onRetry}>
+          {missed > 0 ? "間違えた問題の類似問題に挑戦する" : "まだ解いていない問題に挑戦する"}
+        </button>
+        <p className="muted">
+          {missed > 0
+            ? "間違えた内容をもとに、3〜6 問の短いクイズを作ります。"
+            : "全問正解です。同じリポジトリから、別の問題で 6 問のクイズを作ります。"}
+        </p>
+      </div>
 
       <section className="card">
         <h2>
@@ -50,7 +82,7 @@ export function ResultView({ session, result, onRestart, onRetry }: Props) {
                 <details>
                   <summary>
                     <span className="mark">{r.correct ? "○" : r.score > 0 ? "△" : "×"}</span>
-                    Q{entry.no} <span className="muted">[{CATEGORY_LABELS[r.category]}]</span> {entry.q.question}
+                    Q{entry.no} {entry.q.question}
                   </summary>
                   <dl>
                     <dt>あなたの回答</dt>

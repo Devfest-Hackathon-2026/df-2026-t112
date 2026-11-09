@@ -32,14 +32,30 @@ export function gradeChoice(q: Question, a: Answer | undefined): QuestionResult 
   };
 }
 
+/** 記述式は選択式より明らかに難しいので、1 問で苦手と判定されないよう重みを半分にする。 */
+export const FREE_WEIGHT = 0.5;
+
+/** カテゴリ統合前に作られたクイズの「全体理解」は、統合先の設計・全体理解として数える。 */
+export function currentCategory(category: string): Category {
+  return (category === "overall" ? "design" : category) as Category;
+}
+
 /** 軸ごとの得点率(0〜100)。その軸の問題が無ければ null。 */
 export function categoryScores(results: QuestionResult[]): CategoryScores {
   const out = {} as CategoryScores;
   for (const c of CATEGORIES) {
-    const rs = results.filter((r) => r.category === c);
-    out[c] = rs.length === 0 ? null : Math.round((rs.reduce((n, r) => n + r.score, 0) / rs.length) * 100);
+    const rs = results.filter((r) => currentCategory(r.category) === c);
+    const weight = (r: QuestionResult) => (r.type === "free" ? FREE_WEIGHT : 1);
+    const total = rs.reduce((n, r) => n + weight(r), 0);
+    out[c] = rs.length === 0 ? null : Math.round((rs.reduce((n, r) => n + r.score * weight(r), 0) / total) * 100);
   }
   return out;
+}
+
+/** 説明力(0〜100)。記述式の平均で、カテゴリとは別に見せる。記述式が無ければ null。 */
+export function explanationScore(results: QuestionResult[]): number | null {
+  const free = results.filter((r) => r.type === "free");
+  return free.length === 0 ? null : Math.round((free.reduce((n, r) => n + r.score, 0) / free.length) * 100);
 }
 
 /** 総合理解度。問題がある軸の平均。 */

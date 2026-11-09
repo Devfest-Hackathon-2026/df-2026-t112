@@ -32,9 +32,20 @@ const SYSTEM = `あなたは、AI にコードを書かせたプログラミン�
 
 # 2. 総評(summary)
 <multiple_choice_results> の選択式の結果と、あなたが付けた記述式の採点をもとに、総評を書いてください。
-- 4〜6 文。良い点を 1 つ挙げたあと、足りない点を具体的に指摘し、次に何を学ぶとよいかを 1〜2 個提案してください。
-- 弱いカテゴリは名前を出して触れてください。選択式が良くても記述式が弱ければ、「説明する力」について指摘してください。
-- 点数の数字は書かないでください(最終スコアは別に計算されます)。
+学習者がこれを読めば、次に何をすればよいか分かる、具体的で読み応えのある総評にしてください。
+次の 3 つの見出しをこの順に、それぞれ 1 行で書き、次の行から本文を書いてください。見出しと見出しの間は空行を 1 行入れてください。
+
+【理解できていること】
+正解した問題や記述式の回答から分かる強みを、2〜3 文で書いてください。どの処理やファイルについて理解できているのかを具体的に書いてください。
+
+【理解が足りないこと】
+間違えた問題に共通する誤解や抜けを 2〜4 点、それぞれ 1〜2 文で書いてください。どのファイルのどの処理についてか、正しくはどう理解すべきかを書いてください。間違いが無いときは、さらに理解を深めるための観点を書いてください。
+
+【次にやること】
+読み直すファイルや関数、自分で試して確かめることを、「・」で始まる箇条書きで 2〜3 個書いてください。
+
+- 選択式が良くても記述式が弱ければ、「説明する力」について指摘してください。
+- 「コード読解」などのカテゴリ名と、点数の数字は書かないでください。
 - お世辞や根拠のない断定はしないでください。
 
 日本語で書いてください。`;
@@ -62,7 +73,11 @@ function renderChoiceResults(quiz: Quiz, choiceResults: QuestionResult[]): strin
   const wrong = choiceResults
     .filter((r) => !r.correct)
     .slice(0, MAX_WRONG_LISTED)
-    .map((r) => `- [${CATEGORY_LABELS[r.category]}] ${quiz.questions.find((q) => q.id === r.id)?.question ?? ""}`);
+    .map((r) => {
+      const q = quiz.questions.find((x) => x.id === r.id);
+      const code = q ? `${q.codeRef.path} L${q.codeRef.startLine}-${q.codeRef.endLine}` : "(不明)";
+      return `- [${CATEGORY_LABELS[r.category]}] ${q?.question ?? ""}\n  学習者の回答: ${r.userAnswer}\n  正解: ${r.correctAnswer}\n  該当コード: ${code}`;
+    });
 
   return [
     `<multiple_choice_results>`,

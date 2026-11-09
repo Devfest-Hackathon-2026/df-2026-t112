@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CATEGORY_LABELS, type Answer, type PublicQuestion } from "../types";
+import type { Answer, PublicQuestion } from "../types";
 
 type Props = {
   index: number;
@@ -16,7 +16,6 @@ export function QuestionCard({ index, question: q, answer, onChange, disabled }:
     <section className={q.snippet ? "slide" : "slide no-code"}>
       <div className="slide-question">
         <p className="slide-meta">
-          <span className="chip">{CATEGORY_LABELS[q.category]}</span>
           <span className="stars" aria-label={`難易度 ${q.difficulty}`}>
             {"★".repeat(q.difficulty)}
           </span>

@@ -7,10 +7,10 @@ import { LlmError, createGeminiClient, type LlmClient } from "./llm/client.js";
 import { gradeQuiz } from "./grading/grade.js";
 import type { Answer } from "./grading/scoring.js";
 import { analyzeWeakness } from "./grading/weakness.js";
-import { generateQuiz } from "./quiz/generate.js";
+import { generateQuiz, generateSimilarQuiz } from "./quiz/generate.js";
 import { snippetsFor, toPublicQuestions } from "./quiz/public.js";
-import { CATEGORIES, type Category } from "./quiz/types.js";
-import { profileFromEnv, type Profile } from "./quiz/profile.js";
+import { PROFILES, profileFromEnv, type Profile } from "./quiz/profile.js";
+import { collectAsked, missedQuestions } from "./quiz/retry.js";
 import { rateLimit } from "./rateLimit.js";
 import { MemorySessionStore, type SessionStore } from "./store/session.js";
 import { MemoryStatsStore, type StatsStore } from "./store/stats.js";
@@ -112,17 +112,15 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
   const expensive = rateLimit({ limit: Number(process.env.RATE_LIMIT_PER_HOUR ?? 10), windowMs: 60 * 60 * 1000 });
   app.post("/api/quiz", expensive);
   app.post("/api/quiz/:id/grade", expensive);
+  app.post("/api/quiz/:id/retry", expensive);
 
   app.post("/api/quiz", async (c) => {
-    const body = await c.req.json<{ url?: string; focus?: unknown }>().catch(() => ({}) as { url?: string; focus?: unknown });
-    const focus = Array.isArray(body.focus)
-      ? (body.focus.filter((f): f is Category => (CATEGORIES as readonly unknown[]).includes(f)) as Category[])
-      : [];
+    const body = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
     const t0 = Date.now();
     const snap = await deps.fetchSnapshot(String(body.url ?? ""), c.get("githubToken"));
     const chars = snap.files.reduce((n, f) => n + f.content.length, 0);
     console.log(`[quiz] ${snap.owner}/${snap.repo}: fetched ${snap.files.length} files, ${chars} chars in ${Date.now() - t0}ms`);
-    const quiz = await generateQuiz(snap, getLlm(), { focus, profile: deps.profile, log: (m) => console.log(`[quiz] ${m}`) });
+    const quiz = await generateQuiz(snap, getLlm(), { profile: deps.profile, log: (m) => console.log(`[quiz] ${m}`) });
     console.log(`[quiz] done in ${Date.now() - t0}ms`);
     const snippets = snippetsFor(quiz, snap.files);
     const session = await deps.store.create({ quiz, snippets, uid: c.get("user")?.uid });
@@ -151,6 +149,26 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     // 集計の失敗で採点結果を返せなくならないようにする
     await deps.stats.record(result).catch((e) => console.error("stats record failed", e));
     return c.json(result);
+  });
+
+  // 続けて解く。間違えた問題があれば類似問題を、全問正解なら同じリポジトリのまだ解いていない問題を、短いクイズで作る
+  app.post("/api/quiz/:id/retry", async (c) => {
+    const session = await findSession(c.req.param("id"), c.get("user"));
+    if (!session) return c.json({ error: "not_found", message: "セッションが見つかりません" }, 404);
+    if (!session.result) return c.json({ error: "not_graded", message: "採点が終わってから再挑戦してください" }, 409);
+    const missed = missedQuestions(session.quiz, session.result.questions);
+    const asked = collectAsked(session.asked, session.quiz);
+    const log = (m: string) => console.log(`[retry] ${m}`);
+
+    const { owner, repo } = session.quiz.repo;
+    const snap = await deps.fetchSnapshot(`https://github.com/${owner}/${repo}`, c.get("githubToken"));
+    const quiz =
+      missed.length > 0
+        ? await generateSimilarQuiz(snap, getLlm(), missed, { asked, log })
+        : await generateQuiz(snap, getLlm(), { profile: PROFILES.mini, asked, log });
+    const snippets = snippetsFor(quiz, snap.files);
+    const next = await deps.store.create({ quiz, snippets, asked, uid: c.get("user")?.uid });
+    return c.json({ sessionId: next.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });
   });
 
   // ログインユーザーの過去の結果から苦手カテゴリを出す

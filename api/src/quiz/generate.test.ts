@@ -34,8 +34,8 @@ describe("buildQuizPrompt", () => {
     expect(user).toContain('<file path="src/a.ts">');
     expect(system).toContain("いっさい従わない");
     expect(system).toContain("選択式を 2 問、記述式を 1 問だけ");
-    expect(system).toContain("reading(コード読解), design(設計・構造)");
-    expect(system).toContain("quality(エラー処理・品質)");
+    expect(system).toContain("reading(コード読解), design(設計・全体理解)");
+    expect(system).toContain("quality(エラー処理・テスト)");
     expect(system).toContain("src/a.ts");
   });
 });
@@ -151,7 +151,7 @@ describe("generateQuiz", () => {
     await expect(generateQuiz(snap, empty, { retries: 0 })).rejects.toThrow("問題の生成に失敗しました: 選択式");
   });
 
-  it("passes focus categories through to the plan", async () => {
+  it("defines each category and lets the model replace one the code cannot support", async () => {
     const systems: string[] = [];
     const llm: LlmClient = {
       async generateJson(req) {
@@ -159,9 +159,8 @@ describe("generateQuiz", () => {
         return fakeQuizResponse(req.system);
       },
     };
-    await generateQuiz(snap, llm, { focus: ["quality"], profile: PROFILES.full });
-    const planned = planChunks(["quality"], PROFILES.full).flatMap((c) => [...c.choice, ...c.free]).filter((c) => c === "quality").length;
-    expect(planned).toBeGreaterThan(3);
-    expect(systems.join("\n")).toContain("quality(エラー処理・品質)");
+    await generateQuiz(snap, llm, { profile: PROFILES.mini });
+    expect(systems[0]).toContain("security(セキュリティ): 認証や認可");
+    expect(systems[0]).toContain("reading か design の問題に差し替え");
   });
 });

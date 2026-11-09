@@ -26,6 +26,7 @@ export function serializeSession(s: Session) {
     repo: `${s.quiz.repo.owner}/${s.quiz.repo.repo}`,
     quiz: JSON.stringify(s.quiz),
     snippets: JSON.stringify(s.snippets),
+    asked: s.asked ? JSON.stringify(s.asked) : null,
     result: s.result ? JSON.stringify(s.result) : null,
   };
 }
@@ -37,6 +38,7 @@ export function deserializeSession(id: string, d: Record<string, unknown>): Sess
     uid: typeof d.uid === "string" ? d.uid : undefined,
     quiz: JSON.parse(String(d.quiz)),
     snippets: JSON.parse(String(d.snippets)),
+    asked: typeof d.asked === "string" ? JSON.parse(d.asked) : undefined,
     result: typeof d.result === "string" ? JSON.parse(d.result) : undefined,
   };
 }
@@ -94,7 +96,7 @@ export class FirestoreStatsStore implements StatsStore {
     const n: Record<string, FieldValue> = {};
     for (const c of CATEGORIES) {
       const v = result.categories[c];
-      if (v === null) continue;
+      if (typeof v !== "number") continue;
       sum[c] = FieldValue.increment(v);
       n[c] = FieldValue.increment(1);
     }

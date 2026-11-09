@@ -2,10 +2,11 @@ import type { RepoSnapshot } from "../github/snapshot.js";
 import { LlmError, type LlmClient } from "../llm/client.js";
 import { planChunks, primaryFiles, type ChunkSpec } from "./plan.js";
 import type { Profile } from "./profile.js";
-import { buildQuizPrompt } from "./prompt.js";
+import { buildQuizPrompt, type QuizContext } from "./prompt.js";
+import { planRetry, type MissedQuestion } from "./retry.js";
 import {
   generatedQuizSchema,
-  type Category,
+  type AskedQuestion,
   type GeneratedQuestion,
   type Question,
   type Quiz,
@@ -34,10 +35,19 @@ export function checkShape(questions: GeneratedQuestion[], spec: ChunkSpec): str
   return null;
 }
 
+/** 過去に出した問題と同じ問題文が無いか。プロンプトで禁止しても出ることがあるので、機械的に確かめる。 */
+export function findRepeated(questions: GeneratedQuestion[], asked: AskedQuestion[] = []): string | null {
+  const normalize = (s: string) => s.replace(/\s+/g, "");
+  const seen = new Set(asked.map((a) => normalize(a.question)));
+  const repeated = questions.find((q) => seen.has(normalize(q.question)));
+  return repeated ? `過去に出した問題と同じ問題があります: ${repeated.question.slice(0, 80)}` : null;
+}
+
 export type GenerateOptions = {
-  focus?: Category[];
   /** クイズの大きさ。未指定なら環境変数 QUIZ_PROFILE(既定は mini)。 */
   profile?: Profile;
+  /** これまでに出した問題。同じ問題を出さない。 */
+  asked?: AskedQuestion[];
   rng?: Rng;
   /** 形式不正のときに再試行する回数(チャンクごと)。 */
   retries?: number;
@@ -54,8 +64,9 @@ async function generateChunk(
   chunks: number,
   retries: number,
   log: (message: string) => void,
+  context: QuizContext = {},
 ): Promise<GeneratedQuestion[]> {
-  const { system, user } = buildQuizPrompt(snap, spec, primaryFiles(snap.files.map((f) => f.path), index, chunks));
+  const { system, user } = buildQuizPrompt(snap, spec, primaryFiles(snap.files.map((f) => f.path), index, chunks), context);
   let lastProblem = "";
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -74,9 +85,9 @@ async function generateChunk(
         .map((i) => `${i.path.join(".")}: ${i.message}`)
         .join("; ");
     } else {
-      const shape = checkShape(parsed.data.questions, spec);
-      if (!shape) return parsed.data.questions;
-      lastProblem = shape;
+      const problem = checkShape(parsed.data.questions, spec) ?? findRepeated(parsed.data.questions, context.asked);
+      if (!problem) return parsed.data.questions;
+      lastProblem = problem;
     }
     log(`chunk ${index + 1} attempt ${attempt + 1} rejected: ${lastProblem}`);
   }
@@ -90,14 +101,30 @@ async function generateChunk(
 export async function generateQuiz(snap: RepoSnapshot, llm: LlmClient, opts: GenerateOptions = {}): Promise<Quiz> {
   const retries = opts.retries ?? 1;
   const log = opts.log ?? (() => {});
-  const specs = planChunks(opts.focus, opts.profile);
+  const specs = planChunks(opts.profile);
 
-  const chunks = await Promise.all(specs.map((spec, i) => generateChunk(snap, llm, spec, i, specs.length, retries, log)));
+  const chunks = await Promise.all(specs.map((spec, i) => generateChunk(snap, llm, spec, i, specs.length, retries, log, { asked: opts.asked })));
+  return toQuiz(snap, chunks.flat(), opts.rng);
+}
 
+/** 間違えた問題をもとに、短い再挑戦用のクイズを作る。 */
+export async function generateSimilarQuiz(
+  snap: RepoSnapshot,
+  llm: LlmClient,
+  missed: MissedQuestion[],
+  opts: Pick<GenerateOptions, "rng" | "retries" | "log" | "asked"> = {},
+): Promise<Quiz> {
+  const questions = await generateChunk(snap, llm, planRetry(missed), 0, 1, opts.retries ?? 1, opts.log ?? (() => {}), {
+    missed,
+    asked: opts.asked,
+  });
+  return toQuiz(snap, questions, opts.rng);
+}
+
+function toQuiz(snap: RepoSnapshot, all: GeneratedQuestion[], rng?: Rng): Quiz {
   // 選択式 → 記述式の順に並べる(チャンク内の順序は保つ)
-  const all = chunks.flat();
   const ordered = [...all.filter((q) => q.type === "choice"), ...all.filter((q) => q.type === "free")];
-  const questions: Question[] = ordered.map((q, i) => ({ ...shuffleChoices(q, opts.rng), id: `q${i + 1}` }));
+  const questions: Question[] = ordered.map((q, i) => ({ ...shuffleChoices(q, rng), id: `q${i + 1}` }));
   return {
     repo: { owner: snap.owner, repo: snap.repo, branch: snap.branch, description: snap.description },
     questions,

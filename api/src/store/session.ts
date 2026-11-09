@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { GradeResult } from "../grading/grade.js";
-import type { Quiz } from "../quiz/types.js";
+import type { AskedQuestion, Quiz } from "../quiz/types.js";
 
 export type Session = {
   id: string;
@@ -10,6 +10,8 @@ export type Session = {
   uid?: string;
   /** 問題ごとの該当コード。 */
   snippets: Record<string, string>;
+  /** 続けて解いているとき、このクイズより前に出した問題。 */
+  asked?: AskedQuestion[];
   /** 採点済みなら結果。再採点で Gemini を呼び直さないために保存する。 */
   result?: GradeResult;
 };
