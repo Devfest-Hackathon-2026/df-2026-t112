@@ -6,6 +6,7 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "../src/app.js";
 import type { RepoSnapshot } from "../src/github/snapshot.js";
+import { RepoError } from "../src/github/url.js";
 import type { LlmClient } from "../src/llm/client.js";
 import { CATEGORIES, type GeneratedQuestion } from "../src/quiz/types.js";
 
@@ -67,6 +68,15 @@ const llm: LlmClient = {
   },
 };
 
-const app = createApp({ llm, fetchSnapshot: async () => snapshot });
+const app = createApp({
+  llm,
+  fetchSnapshot: async () => snapshot,
+  // URL に missing や secret を含めると、入力欄のエラー表示を試せる
+  checkRepo: async (url) => {
+    if (url.includes("missing")) throw new RepoError("not_found", "リポジトリが見つかりません(非公開の可能性もあります)");
+    if (url.includes("secret")) throw new RepoError("private", "非公開リポジトリは対応していません");
+    return { owner: "mock", repo: "calculator", description: null };
+  },
+});
 const port = Number(process.env.PORT ?? 8080);
 serve({ fetch: app.fetch, port }, () => console.log(`mock api listening on :${port}`));

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { accessCheck, accessPassword } from "./accessPassword.js";
 import { authMiddleware, type AuthUser, type AuthVariables, type Authenticator } from "./auth.js";
-import { fetchRepoSnapshot, type RepoSnapshot } from "./github/snapshot.js";
+import { checkRepo, fetchRepoSnapshot, type RepoCheck, type RepoSnapshot } from "./github/snapshot.js";
 import { RepoError } from "./github/url.js";
 import { LlmError, createGeminiClient, type LlmClient } from "./llm/client.js";
 import { gradeQuiz } from "./grading/grade.js";
@@ -22,6 +22,8 @@ export type Deps = {
   llm?: LlmClient;
   /** userToken はログイン済みユーザー本人の GitHub トークン。あれば非公開リポジトリも読む。 */
   fetchSnapshot: (url: string, userToken?: string) => Promise<RepoSnapshot>;
+  /** 入力欄の即時チェック用。リポジトリを読めるかどうかだけを確かめる。 */
+  checkRepo: (url: string, userToken?: string) => Promise<RepoCheck>;
   /** 未指定なら認証なし(匿名のみ)。 */
   auth?: Authenticator;
   /** クイズの大きさ。未指定なら環境変数 QUIZ_PROFILE(既定は mini)。 */
@@ -47,6 +49,10 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     llm: partial.llm,
     auth: partial.auth,
     profile,
+    checkRepo:
+      partial.checkRepo ??
+      ((url, userToken) =>
+        userToken ? checkRepo(url, { token: userToken, allowPrivate: true }) : checkRepo(url, { token: process.env.GITHUB_TOKEN })),
     fetchSnapshot:
       partial.fetchSnapshot ??
       ((url, userToken) =>
@@ -81,6 +87,13 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
   });
 
   app.get("/api/health", (c) => c.json({ ok: true }));
+
+  // 入力のたびに呼ばれるので、共有の GitHub トークンを使い切らないように回数を絞る
+  app.post("/api/repo/check", rateLimit({ limit: Number(process.env.REPO_CHECK_PER_HOUR ?? 300), windowMs: 60 * 60 * 1000 }));
+  app.post("/api/repo/check", async (c) => {
+    const body = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
+    return c.json(await deps.checkRepo(String(body.url ?? ""), c.get("githubToken")));
+  });
 
   app.post("/api/repo/preview", async (c) => {
     const body = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });

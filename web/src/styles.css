@@ -103,6 +103,10 @@ button.block { display: block; width: 100%; }
 .url-row { display: flex; gap: 8px; }
 .url-row input { flex: 1; min-width: 0; }
 .url-row button { flex: none; }
+/* 結果が出ても入力欄の位置が動かないよう、1 行分の高さを確保する */
+.url-status { min-height: 1.6em; margin: 10px 0 0; color: var(--muted); font-size: 0.9rem; }
+.url-status.ok { color: var(--success); }
+.url-status.error { color: var(--danger); }
 
 /* パスワード */
 .gate { width: 100%; max-width: 360px; margin: auto; }
