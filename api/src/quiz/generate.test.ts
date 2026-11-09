@@ -171,6 +171,13 @@ describe("generateQuiz", () => {
     await expect(generateQuiz(snap, empty, { retries: 0 })).rejects.toThrow("問題の生成に失敗しました: 選択式");
   });
 
+  it("asks for questions that cannot be answered by copying the code", () => {
+    const { system } = buildQuizPrompt(snap, { choice: ["reading"], free: [] });
+    expect(system).toContain("# 理解を問う問題にする");
+    expect(system).toContain("コードを見て写すだけで答えられる問題");
+    expect(system).toContain("変更の影響");
+  });
+
   it("defines each category and lets the model replace one the code cannot support", async () => {
     const systems: string[] = [];
     const llm: LlmClient = {
