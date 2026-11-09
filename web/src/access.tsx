@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Wordmark } from "./components/Wordmark";
 
 const KEY = "evc-access-password";
 
@@ -56,7 +57,9 @@ export function AccessGate({ children }: { children: ReactNode }) {
   return (
     <main>
       <form className="card gate" onSubmit={submit}>
-        <h1>EVC</h1>
+        <h1>
+          <Wordmark />
+        </h1>
         <p className="muted">パスワードを入力してください</p>
         <input
           type="password"
