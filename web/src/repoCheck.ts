@@ -31,7 +31,8 @@ export function accessFrom(data: unknown): RepoAccess | undefined {
 }
 
 /**
- * 非公開リポジトリが読めなかったときに出す案内。
+ * 非公開リポジトリが読めなかったときに出す案内。API が非公開リポジトリを読まない設定のときは出さない
+ * (ログインし直しても、GitHub で許可しても読めないため。エラーの説明に「まだ対応していません」と出る)。
  * - relogin: GitHub のトークンが無い(リロードすると消える)。ログインし直せば読めるかもしれない
  * - configure: EVC はもう入っているが、このリポジトリが選ばれていない。設定の画面でリポジトリを足す
  * - install: まだ EVC が入っていない。GitHub App は、インストールされたリポジトリしか読めないため、
@@ -41,9 +42,9 @@ export type RepoHint = "relogin" | "configure" | "install" | null;
 
 export function repoHint(
   check: RepoCheckState,
-  opts: { loginEnabled: boolean; hasGithubToken: boolean; canInstall: boolean },
+  opts: { loginEnabled: boolean; privateRepos: boolean; hasGithubToken: boolean; canInstall: boolean },
 ): RepoHint {
-  if (!opts.loginEnabled || check.state !== "error") return null;
+  if (!opts.loginEnabled || !opts.privateRepos || check.state !== "error") return null;
   if (check.code !== "not_found" && check.code !== "private") return null;
   if (!opts.hasGithubToken) return "relogin";
   if (check.access?.kind === "configure") return "configure";

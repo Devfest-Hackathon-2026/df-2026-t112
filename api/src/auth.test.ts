@@ -36,6 +36,7 @@ function setup(extra: Parameters<typeof createApp>[0] = {}) {
     llm,
     auth,
     allowed,
+    privateRepos: false,
     profile: PROFILES.full,
     fetchSnapshot: async (_url, userToken) => {
       seen.push(userToken);
@@ -95,7 +96,7 @@ describe("login required", () => {
   it("tells an allowed user their GitHub ID", async () => {
     const res = await setup().get("/api/me", bearer("alice"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ githubId: "1" });
+    expect(await res.json()).toEqual({ githubId: "1", privateRepos: false });
   });
 
   it("refuses to start with development authentication on Cloud Run", () => {
@@ -108,7 +109,7 @@ describe("login required", () => {
 describe("development mode (no authenticator)", () => {
   it("treats every request as the development user", async () => {
     const { app, post } = setup({ auth: undefined });
-    expect(await (await app.request("/api/me")).json()).toEqual({ githubId: DEV_USER.githubId });
+    expect(await (await app.request("/api/me")).json()).toEqual({ githubId: DEV_USER.githubId, privateRepos: false });
     const created = await (await post("/api/quiz")).json();
     expect((await app.request(`/api/quiz/${created.sessionId}`)).status).toBe(200);
   });

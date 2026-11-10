@@ -53,6 +53,9 @@ services:
       GCLOUD_PROJECT: demo-evc
       # 許可リスト。「まだ使えません」の画面を試すときは、架空のアカウントとは違う ID にする
       ALLOWED_GITHUB_IDS: ${ALLOWED_GITHUB_IDS:-*}
+      # 非公開リポジトリの案内(ログインし直す、GitHub で許可する)を試せるように on にする。エミュレータのログインでは
+      # 本物の GitHub トークンが出ないので、非公開リポジトリは読めない。本番の止めた状態を試すときは off にする
+      PRIVATE_REPOS: ${PRIVATE_REPOS:-on}
     ports:
       - "8080:8080"
     depends_on:

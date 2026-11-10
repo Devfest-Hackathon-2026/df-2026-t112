@@ -21,7 +21,7 @@ export function RepoForm({ onSubmit, error, resume }: Props) {
   // 増やすと、同じ URL をもう一度確かめる
   const [recheck, setRecheck] = useState(0);
   const pasted = useRef(false);
-  const { enabled, hasGithubToken, reconnectGithub } = useAuth();
+  const { enabled, hasGithubToken, privateRepos, reconnectGithub } = useAuth();
 
   useEffect(() => {
     const value = url.trim();
@@ -48,7 +48,7 @@ export function RepoForm({ onSubmit, error, resume }: Props) {
     // GitHub でログインし直したときや、GitHub で許可して戻ってきたときも、同じ URL をもう一度確かめる
   }, [url, hasGithubToken, recheck]);
 
-  const hint = repoHint(check, { loginEnabled: enabled, hasGithubToken, canInstall: githubAppInstallUrl !== undefined });
+  const hint = repoHint(check, { loginEnabled: enabled, privateRepos, hasGithubToken, canInstall: githubAppInstallUrl !== undefined });
 
   // GitHub の画面で EVC に許可を出して(リポジトリを足して)、この画面に戻ってきたら確かめ直す
   useEffect(() => {

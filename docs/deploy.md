@@ -38,7 +38,7 @@ gcloud projects add-iam-policy-binding <project>   --member=serviceAccount:<serv
 
 ## 3. ログイン(GitHub App + Firebase Auth)
 
-API は、GitHub でログインして、許可リストに入っている人だけを受け付けます(`/api/health` を除く)。リポジトリは、ログインした本人の GitHub トークン(user-to-server トークン)で、本人が読めるものだけを読みます。クライアントから installation ID は受け取りません(他人の非公開リポジトリを読めてしまうため)。
+API は、GitHub でログインして、許可リストに入っている人だけを受け付けます(`/api/health` を除く)。リポジトリは、ログインした本人の GitHub トークン(user-to-server トークン)で、本人が読めるものだけを読みます。非公開リポジトリは、API に `PRIVATE_REPOS=on` を付けたときだけ読みます(手順 4)。クライアントから installation ID は受け取りません(他人の非公開リポジトリを読めてしまうため)。
 
 1. Firebase コンソールの「プロジェクトの設定」→「全般」→「マイアプリ」で Web アプリを追加し、表示される `firebaseConfig` の `apiKey`、`authDomain`、`projectId`、`appId` を控える。Web のビルドで使う(画面の JS に入る公開の値で、秘密ではない)。
 2. GitHub の Settings → Developer settings → GitHub Apps → New GitHub App で、GitHub App を作る。作ったら Client ID を控え、「Generate a new client secret」で Client secret を作って控える(secret は一度しか表示されない)。
@@ -62,7 +62,7 @@ API は、GitHub でログインして、許可リストに入っている人だ
 gh api users/<ユーザー名> --jq .id
 ```
 
-5. 非公開リポジトリを読ませたい利用者は、GitHub App をそのリポジトリにインストールする(`https://github.com/apps/<App の名前>` の Install)。ログインだけでは読めない(GitHub App は、インストールされたリポジトリしか読めない)。「All repositories」を選べば、自分のリポジトリは、あとから作るものも含めてすべて読める。組織のリポジトリは、組織のオーナーの承認が要る。画面は、ログインしているのにリポジトリが見つからないときに、案内を出す。持ち主のアカウントにまだ EVC が入っていなければインストールの画面(`VITE_GITHUB_APP_SLUG` を設定したとき)、すでに入っていれば、そのインストールの設定の画面(リポジトリを足す画面)。インストールの画面には、すでに入れたアカウントが出てこないため。どちらかは、API がログインした人の GitHub トークンで `GET /user/installations` を呼んで調べる。
+5. (`PRIVATE_REPOS=on` のとき)非公開リポジトリを読ませたい利用者は、GitHub App をそのリポジトリにインストールする(`https://github.com/apps/<App の名前>` の Install)。ログインだけでは読めない(GitHub App は、インストールされたリポジトリしか読めない)。「All repositories」を選べば、自分のリポジトリは、あとから作るものも含めてすべて読める。組織のリポジトリは、組織のオーナーの承認が要る。画面は、ログインしているのにリポジトリが見つからないときに、案内を出す。持ち主のアカウントにまだ EVC が入っていなければインストールの画面(`VITE_GITHUB_APP_SLUG` を設定したとき)、すでに入っていれば、そのインストールの設定の画面(リポジトリを足す画面)。インストールの画面には、すでに入れたアカウントが出てこないため。どちらかは、API がログインした人の GitHub トークンで `GET /user/installations` を呼んで調べる。
 
 ## 4. API を Cloud Run へ
 
@@ -81,11 +81,18 @@ gcloud run deploy evc-api \
 - `--source .` はルートの `Dockerfile` を使います。
 - `AUTH=firebase` が無いと、API は起動しません(開発用の認証のまま動いて、誰でも使えてしまうのを防ぐため)。
 - `ALLOWED_GITHUB_IDS` はスペースで区切ります(カンマは `--set-env-vars` の区切りと重なるため)。`*` にすると、GitHub でログインした人なら誰でも使えます。空にすると、誰も使えません。
+- 非公開リポジトリは、`PRIVATE_REPOS=on` を足したときだけ読みます。Gemini を有料枠にするまでは付けません(無料枠では、送ったコードが Google の AI の学習に使われ、人が読むこともあるため。#34 の D26)。付けていないと、非公開リポジトリには「まだ対応していません」と出て、GitHub App の案内も出ません。
 
 許可リストに人を足すときは、全員分の ID を入れ直します。GitHub Actions でデプロイしている場合は、変数 `ALLOWED_GITHUB_IDS` も同じ値に変えます(変えないと、次のデプロイで元に戻ります)。
 
 ```sh
 gcloud run services update evc-api --region asia-northeast1 --update-env-vars "ALLOWED_GITHUB_IDS=<ID> <ID> <新しい ID>"
+```
+
+全員に使わせるときは、`ALLOWED_GITHUB_IDS=*` にします(GitHub Actions の変数 `ALLOWED_GITHUB_IDS` も `*` にします)。`PRIVATE_REPOS` を付けていなければ、知らない人が自分の非公開リポジトリを EVC に読ませることはできません(EVC の GitHub App は、誰でもインストールできるため)。
+
+```sh
+gcloud run services update evc-api --region asia-northeast1 --update-env-vars "ALLOWED_GITHUB_IDS=*"
 ```
 
 ## 5. Web を Hosting へ
@@ -112,9 +119,10 @@ curl https://<project>.web.app/api/health
 - 匿名の全体集計は Firestore の `stats/global` に入り、`GET /api/stats` で読めます。
 - レート制限もインスタンス単位です。回数はアカウントごとに数えます。厳密な制限が必要なら Cloud Armor などを使ってください。
 - `--max-instances` は Gemini の課金を抑えるための上限です。
-- GitHub トークンは `X-GitHub-Token` ヘッダーで API に渡り、保存もログ出力もしません。ブラウザ側もメモリ上にしか持たないため、リロードすると消えます。そのあと非公開リポジトリを読むには、URL の入力欄の下に出る「ログインし直す」を押します。
+- GitHub トークンは `X-GitHub-Token` ヘッダーで API に渡り、保存もログ出力もしません。ブラウザ側もメモリ上にしか持たないため、リロードすると消えます。そのあと非公開リポジトリを読むには(`PRIVATE_REPOS=on` のとき)、URL の入力欄の下に出る「ログインし直す」を押します。
 - クイズ(セッション)は、作った本人にしか見えません。ログインを必須にする前に作られた、持ち主のいないセッションは誰にも見えません。
 - サーバー側の `GITHUB_TOKEN` は公開リポジトリ用のレート制限対策です。非公開リポジトリには使われません。
+- ログインの画面に、利用規約を出します(Gemini にコードと回答を送ること、Google が AI の学習に使ったり人が読んだりする場合があること、など)。Gemini の有料枠でも無料枠でも、同じ内容です。ログインすると同意したものとします(同意の記録は、まだ残していません)。中身は `web/src/components/Terms.tsx` です。
 
 ## GitHub Actions で自動デプロイ
 

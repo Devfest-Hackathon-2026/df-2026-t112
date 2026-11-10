@@ -171,6 +171,11 @@ button.block { display: block; width: 100%; }
 .gate button { width: 100%; margin-top: 16px; }
 .gate p + p { margin-top: -12px; }
 .gate .gate-id { font-family: "Roboto Mono", Consolas, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
+.terms { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-variant); text-align: left; }
+.terms h2 { margin: 0 0 6px; font-size: 0.875rem; font-weight: 500; }
+.terms ul { margin: 0; padding-left: 1.25em; color: var(--muted); font-size: 0.8125rem; line-height: 1.6; }
+.terms li + li { margin-top: 4px; }
+.gate .terms-agree { margin: 0; color: var(--muted); font-size: 0.8125rem; }
 
 /* 非公開リポジトリを読むための案内(ログインし直す、GitHub で EVC に読む許可を出す) */
 .reconnect { margin: -6px 0 14px; color: var(--muted); font-size: 0.875rem; }

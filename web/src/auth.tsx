@@ -11,6 +11,8 @@ type AuthState = {
   /** Firebase の設定があり、ログインできる。無ければ開発用(ログインなし)。 */
   enabled: boolean;
   user: User | null;
+  /** API が非公開リポジトリを読むか(PRIVATE_REPOS。Gemini を有料枠にするまでは、本番では読まない)。 */
+  privateRepos: boolean;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   /** 非公開リポジトリを読むための GitHub トークンを持っているか(リロードすると消える)。 */
@@ -23,6 +25,7 @@ const Ctx = createContext<AuthState>({
   status: { state: "loading" },
   enabled: false,
   user: null,
+  privateRepos: false,
   login: async () => {},
   logout: async () => {},
   hasGithubToken: false,
@@ -38,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [status, setStatus] = useState<AuthStatus>({ state: "loading" });
   const [tokenHeld, setTokenHeld] = useState(false);
+  const [privateRepos, setPrivateRepos] = useState(false);
   // ログインし直したあとに、前の人の確認結果で上書きしないようにする
   const generation = useRef(0);
 
@@ -46,12 +50,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const check = async (signedIn: boolean) => {
       const mine = ++generation.current;
       let error: string | null = null;
+      let readsPrivate = false;
       try {
-        await getMe();
+        readsPrivate = (await getMe()).privateRepos === true;
       } catch (e) {
         error = e instanceof ApiError ? e.code : "unknown";
       }
       if (mine !== generation.current) return;
+      setPrivateRepos(readsPrivate);
       const next = statusFromMe(error, signedIn);
       setStatus(next);
       // API が受け付けないログインは捨てる(エミュレータを作り直したときなど)
@@ -80,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       enabled: firebaseAuth !== null,
       user,
+      privateRepos,
       login: async () => {
         if (!firebaseAuth) return;
         rememberGithubToken(await signInWithPopup(firebaseAuth, new GithubAuthProvider()));
@@ -101,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTokenHeld(hasGithubToken());
       },
     }),
-    [status, user, tokenHeld],
+    [status, user, privateRepos, tokenHeld],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

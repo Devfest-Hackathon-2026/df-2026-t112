@@ -54,8 +54,8 @@ async function request<T>(path: string, body?: unknown, signalOrOptions?: AbortS
   return data as T;
 }
 
-/** ログインしている人が、使ってよい人かどうか。許可リストに無ければ not_allowed で失敗する。 */
-export const getMe = () => request<{ githubId: string }>("/api/me");
+/** ログインしている人が、使ってよい人かどうか。許可リストに無ければ not_allowed で失敗する。privateRepos は、API が非公開リポジトリを読むか。 */
+export const getMe = () => request<{ githubId: string; privateRepos?: boolean }>("/api/me");
 
 export const checkRepo = (url: string, signal?: AbortSignal) =>
   request<{ owner: string; repo: string; description: string | null }>("/api/repo/check", { url }, signal);

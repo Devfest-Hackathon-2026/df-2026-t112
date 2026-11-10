@@ -57,6 +57,7 @@ describe("POST /api/repo/check", () => {
     ["invalid_url", 400],
   ] as const)("maps %s to HTTP %i", async (code, status) => {
     const app = createApp({
+      privateRepos: true,
       checkRepo: async () => {
         throw new RepoError(code, "message");
       },
@@ -74,7 +75,7 @@ describe("POST /api/repo/check for a repository the signed-in user cannot read",
     throw new RepoError("not_found", "見つかりません");
   };
   const setup = (findRepoAccess: (url: string, token: string) => Promise<RepoAccess>) =>
-    createApp({ auth, allowed: parseAllowlist("*"), checkRepo: notFound, findRepoAccess });
+    createApp({ auth, allowed: parseAllowlist("*"), privateRepos: true, checkRepo: notFound, findRepoAccess });
   const post = (app: ReturnType<typeof createApp>, githubToken?: string) =>
     app.request("/api/repo/check", {
       method: "POST",
