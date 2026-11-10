@@ -32,7 +32,7 @@ function phaseFor(screen: Screen): Phase {
 export function App() {
   // 再読み込みしても、回答中のクイズや結果が消えないようにする
   const [saved] = useState(() => loadProgress());
-  const [phase, setPhase] = useState<Phase>(() => phaseFor(enterApp(saved !== null)));
+  const [phase, setPhase] = useState<Phase>(() => phaseFor(enterApp()));
   const [answers, setAnswers] = useState<Answers>(saved?.answers ?? {});
   const [error, setError] = useState<string | null>(null);
   const [openMistakes, setOpenMistakes] = useState(0);
@@ -144,6 +144,16 @@ export function App() {
     }
   };
 
+  /** 入口の画面から、保存してあるクイズや結果を開く。 */
+  const resume = () => {
+    pushScreen("app");
+    setError(null);
+    setAnswers(loadProgress()?.answers ?? {});
+    setPhase(phaseFor("app"));
+  };
+
+  const progress = phase.name === "input" ? loadProgress() : null;
+
   const openFolder = () => {
     if (phase.name === "mistakes") return;
     pushScreen("mistakes");
@@ -187,7 +197,11 @@ export function App() {
       </header>
 
       <main className={phase.name === "quiz" || phase.name === "mistakes" ? "wide" : undefined}>
-      {phase.name === "input" && <RepoForm onSubmit={start} error={error} />}
+      {phase.name === "input" && <RepoForm
+          onSubmit={start}
+          error={error}
+          resume={progress ? { label: `${progress.session.repo.owner}/${progress.session.repo.repo} の${progress.result ? "結果を見る" : "続きから解く"}`, onClick: resume } : undefined}
+        />}
       {phase.name === "mistakes" && <MistakesView />}
       {phase.name === "loading" && (
         <div className="loading" aria-live="polite">

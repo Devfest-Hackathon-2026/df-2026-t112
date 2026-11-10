@@ -7,9 +7,14 @@ import { githubAppInstallUrl } from "../githubApp";
 import { accessFrom, checkDelay, checkFailure, repoHint, type RepoCheckState } from "../repoCheck";
 import { Wordmark } from "./Wordmark";
 
-type Props = { onSubmit: (url: string) => void; error?: string | null };
+type Props = {
+  onSubmit: (url: string) => void;
+  error?: string | null;
+  /** 保存してあるクイズや結果を開くボタン。 */
+  resume?: { label: string; onClick: () => void };
+};
 
-export function RepoForm({ onSubmit, error }: Props) {
+export function RepoForm({ onSubmit, error, resume }: Props) {
   const [url, setUrl] = useState("");
   const [check, setCheck] = useState<RepoCheckState>({ state: "idle" });
   const [reconnectError, setReconnectError] = useState<string | null>(null);
@@ -151,6 +156,13 @@ export function RepoForm({ onSubmit, error }: Props) {
         クイズを作る
       </button>
       {error && <p className="error" role="alert">{error}</p>}
+      {resume && (
+        <p className="hero-resume">
+          <button type="button" className="link" onClick={resume.onClick}>
+            {resume.label}
+          </button>
+        </p>
+      )}
       <p className="muted hero-help">AI がコードを読んで、理解度をチェックするクイズを作ります。</p>
     </form>
   );
