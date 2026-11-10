@@ -1,10 +1,12 @@
 import { GithubAuthProvider, onAuthStateChanged, reauthenticateWithPopup, signInWithPopup, signOut, type User } from "firebase/auth";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ApiError, getMe } from "./api";
-import { statusFromMe, type AuthStatus } from "./authStatus";
+import { ApiError, getMe, saveConsent } from "./api";
+import { hasAgreed, statusFromMe, type AuthStatus } from "./authStatus";
+import { TERMS_VERSION } from "./components/Terms";
 import { firebaseAuth, forgetGithubToken, hasGithubToken, rememberGithubToken } from "./firebase";
 import { forgetQuiz } from "./persist";
 import { showQuizInUrl } from "./quizUrl";
+import type { Consent } from "./types";
 
 type AuthState = {
   status: AuthStatus;
@@ -13,7 +15,12 @@ type AuthState = {
   user: User | null;
   /** API が非公開リポジトリを読むか(PRIVATE_REPOS。Gemini を有料枠にするまでは、本番では読まない)。 */
   privateRepos: boolean;
+  /** 規約への同意。同意していなければ null。 */
+  consent: Consent | null;
+  /** ログインの画面で規約に同意してから呼ぶ。ログインできたら、その同意を記録する。 */
   login: () => Promise<void>;
+  /** ログインのあとで、今の規約に同意する。 */
+  agree: () => Promise<void>;
   logout: () => Promise<void>;
   /** 非公開リポジトリを読むための GitHub トークンを持っているか(リロードすると消える)。 */
   hasGithubToken: boolean;
@@ -26,7 +33,9 @@ const Ctx = createContext<AuthState>({
   enabled: false,
   user: null,
   privateRepos: false,
+  consent: null,
   login: async () => {},
+  agree: async () => {},
   logout: async () => {},
   hasGithubToken: false,
   reconnectGithub: async () => {},
@@ -42,6 +51,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>({ state: "loading" });
   const [tokenHeld, setTokenHeld] = useState(false);
   const [privateRepos, setPrivateRepos] = useState(false);
+  const [consent, setConsent] = useState<Consent | null>(null);
+  /** ログインの画面で、規約に同意してからログインを押した。ログインできたら、その同意を記録する。 */
+  const consentAtLogin = useRef(false);
   // ログインし直したあとに、前の人の確認結果で上書きしないようにする
   const generation = useRef(0);
 
@@ -51,14 +63,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const mine = ++generation.current;
       let error: string | null = null;
       let readsPrivate = false;
+      let agreed: Consent | null = null;
       try {
-        readsPrivate = (await getMe()).privateRepos === true;
+        const me = await getMe();
+        readsPrivate = me.privateRepos === true;
+        agreed = me.consent ?? null;
       } catch (e) {
         error = e instanceof ApiError ? e.code : "unknown";
       }
       if (mine !== generation.current) return;
+      // ログインの画面で規約に同意してからログインした人は、ここで同意を記録する。記録できなければ、同意の画面を出す
+      if (error === null && signedIn && consentAtLogin.current && !hasAgreed(agreed, TERMS_VERSION)) {
+        agreed = await saveConsent(TERMS_VERSION).then(
+          (r) => r.consent,
+          () => agreed,
+        );
+        if (mine !== generation.current) return;
+      }
+      consentAtLogin.current = false;
       setPrivateRepos(readsPrivate);
-      const next = statusFromMe(error, signedIn);
+      setConsent(agreed);
+      const next = statusFromMe(error, signedIn, agreed, TERMS_VERSION);
       setStatus(next);
       // API が受け付けないログインは捨てる(エミュレータを作り直したときなど)
       if (next.state === "signedOut" && firebaseAuth) await signOut(firebaseAuth);
@@ -87,10 +112,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       enabled: firebaseAuth !== null,
       user,
       privateRepos,
+      consent,
       login: async () => {
         if (!firebaseAuth) return;
-        rememberGithubToken(await signInWithPopup(firebaseAuth, new GithubAuthProvider()));
+        consentAtLogin.current = true;
+        try {
+          rememberGithubToken(await signInWithPopup(firebaseAuth, new GithubAuthProvider()));
+        } catch (e) {
+          consentAtLogin.current = false;
+          throw e;
+        }
         setTokenHeld(hasGithubToken());
+      },
+      agree: async () => {
+        const saved = await saveConsent(TERMS_VERSION);
+        setConsent(saved.consent);
+        setStatus({ state: "ready" });
       },
       logout: async () => {
         forgetGithubToken();
@@ -108,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTokenHeld(hasGithubToken());
       },
     }),
-    [status, user, privateRepos, tokenHeld],
+    [status, user, privateRepos, consent, tokenHeld],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -23,6 +23,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
       return <LoginScreen error={status.error} />;
     case "notAllowed":
       return <NotAllowed />;
+    case "consent":
+      return <ConsentScreen renewal={status.renewal} />;
     case "misconfigured":
       return (
         <Gate>
@@ -46,8 +48,19 @@ function Gate({ children }: { children: ReactNode }) {
   );
 }
 
+/** 規約に同意するチェック。18 歳以上の確認も兼ねる(#37 の consent.ageConfirmed)。 */
+function AgreeCheck({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="terms-agree">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      18 歳以上で、この利用規約に同意します
+    </label>
+  );
+}
+
 function LoginScreen({ error }: { error?: string }) {
   const { login } = useAuth();
+  const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -68,11 +81,47 @@ function LoginScreen({ error }: { error?: string }) {
     <Gate>
       <p className="muted">GitHub のアカウントでログインしてください</p>
       <Terms />
-      <p className="terms-agree">GitHub でログインすると、この利用規約に同意したものとします。</p>
-      <button onClick={handle} disabled={busy}>
+      <AgreeCheck checked={agreed} onChange={setAgreed} />
+      <button onClick={handle} disabled={busy || !agreed}>
         GitHub でログイン
       </button>
       {message && <p role="alert">{message}</p>}
+    </Gate>
+  );
+}
+
+/** ログインのあとで、今の規約にまだ同意していない人に出す(規約を出す前からログインしていた人や、規約を変えたあと)。 */
+function ConsentScreen({ renewal }: { renewal: boolean }) {
+  const { agree, logout } = useAuth();
+  const [agreed, setAgreed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const handle = async () => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      await agree();
+    } catch {
+      setFailure("同意を記録できませんでした。もう一度お試しください");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Gate>
+      <p className="muted">
+        {renewal ? "利用規約が新しくなりました。続けて使うには、同意をお願いします" : "使う前に、利用規約への同意をお願いします"}
+      </p>
+      <Terms />
+      <AgreeCheck checked={agreed} onChange={setAgreed} />
+      <button onClick={handle} disabled={busy || !agreed}>
+        同意して始める
+      </button>
+      {failure && <p role="alert">{failure}</p>}
+      <button className="secondary" onClick={logout}>
+        ログアウト
+      </button>
     </Gate>
   );
 }

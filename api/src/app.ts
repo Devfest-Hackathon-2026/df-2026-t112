@@ -19,6 +19,7 @@ import { rateLimit } from "./rateLimit.js";
 import { registerMistakeRoutes } from "./mistakes.js";
 import { githubAccess, parsePrivateRepos, repoErrorMessage } from "./privateRepos.js";
 import { MemoryMistakeStore, type MistakeStore } from "./store/mistakes.js";
+import { MemoryUserStore, type Consent, type UserStore } from "./store/users.js";
 import { MemorySessionStore, type SessionStore } from "./store/session.js";
 import { MemoryStatsStore, type StatsStore } from "./store/stats.js";
 
@@ -26,6 +27,8 @@ export type Deps = {
   store: SessionStore;
   stats: StatsStore;
   mistakes: MistakeStore;
+  /** ユーザーの情報(今は規約への同意だけ)。 */
+  users: UserStore;
   /** 未指定なら初回利用時に Gemini クライアントを作る。 */
   llm?: LlmClient;
   /** userToken はログイン済みユーザー本人の GitHub トークン。あれば、それで読む(非公開リポジトリは privateRepos のときだけ)。 */
@@ -61,6 +64,9 @@ const REPO_ERROR_STATUS = {
   token_required: 503,
 } as const;
 
+/** 規約のバージョンは、文面を変えた日(例:"2026-11-10")。 */
+const TERMS_VERSION_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVariables }> {
   // 本番(Cloud Run)で認証を付け忘れると、誰でも開発用のユーザーとして使えてしまう
   if (!partial.auth && process.env.K_SERVICE) {
@@ -75,6 +81,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     store: partial.store ?? new MemorySessionStore(),
     stats: partial.stats ?? new MemoryStatsStore(),
     mistakes: partial.mistakes ?? new MemoryMistakeStore(),
+    users: partial.users ?? new MemoryUserStore(),
     llm: partial.llm,
     auth: partial.auth,
     allowed: partial.allowed ?? parseAllowlist(process.env.ALLOWED_GITHUB_IDS),
@@ -132,12 +139,31 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
 
   app.get("/api/health", (c) => c.json({ ok: true }));
 
-  // ログインした直後に、使ってよい人かどうかと、非公開リポジトリを読めるかを画面が確かめる
-  app.get("/api/me", (c) => c.json({ githubId: c.get("user").githubId, privateRepos: deps.privateRepos }));
+  // ログインした直後に、使ってよい人かどうか、非公開リポジトリを読めるか、規約に同意しているかを画面が確かめる
+  app.get("/api/me", async (c) => {
+    const user = c.get("user");
+    return c.json({ githubId: user.githubId, privateRepos: deps.privateRepos, consent: await deps.users.getConsent(user.uid) });
+  });
 
   /** 回数はアカウントごとに数える(学校や会社では、全員が同じ IP アドレスになることがあるため)。 */
   const perUser = (limit: number) =>
     rateLimit<{ Variables: AuthVariables }>({ limit, windowMs: 60 * 60 * 1000, key: (c) => c.get("user").uid });
+
+  // 規約への同意を記録する(#34 の D26、#37 の UserDoc.consent)。今の規約に同意しているかどうかは、画面が版を比べて決める
+  app.post("/api/me/consent", perUser(30), async (c) => {
+    const body = await c.req
+      .json<{ termsVersion?: unknown; ageConfirmed?: unknown }>()
+      .catch(() => ({}) as { termsVersion?: unknown; ageConfirmed?: unknown });
+    if (typeof body.termsVersion !== "string" || !TERMS_VERSION_RE.test(body.termsVersion)) {
+      return c.json({ error: "invalid_terms_version", message: "規約のバージョンが正しくありません" }, 400);
+    }
+    if (body.ageConfirmed !== true) {
+      return c.json({ error: "age_not_confirmed", message: "18 歳以上であることを確かめてください" }, 400);
+    }
+    const consent: Consent = { termsVersion: body.termsVersion, agreedAt: Date.now(), ageConfirmed: true };
+    await deps.users.saveConsent(c.get("user").uid, consent);
+    return c.json({ consent });
+  });
 
   // 入力のたびに呼ばれるので、共有の GitHub トークンを使い切らないように回数を絞る
   const repoLookup = perUser(Number(process.env.REPO_CHECK_PER_HOUR ?? 300));
