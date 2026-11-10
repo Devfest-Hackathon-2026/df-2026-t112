@@ -1,11 +1,11 @@
 import { GithubAuthProvider, onAuthStateChanged, reauthenticateWithPopup, signInWithPopup, signOut, type User } from "firebase/auth";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError, getMe, saveConsent } from "./api";
-import { hasAgreed, statusFromMe, type AuthStatus } from "./authStatus";
-import { TERMS_VERSION } from "./components/Terms";
+import { statusFromMe, type AuthStatus } from "./authStatus";
 import { firebaseAuth, forgetGithubToken, hasGithubToken, rememberGithubToken } from "./firebase";
 import { forgetQuiz } from "./persist";
 import { showQuizInUrl } from "./quizUrl";
+import { TERMS_VERSION } from "./components/Terms";
 import type { Consent } from "./types";
 
 type AuthState = {
@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (mine !== generation.current) return;
       // ログインの画面で規約に同意してからログインした人は、ここで同意を記録する。記録できなければ、同意の画面を出す
-      if (error === null && signedIn && consentAtLogin.current && !hasAgreed(agreed, TERMS_VERSION)) {
+      if (consentAtLogin.current && statusFromMe(error, signedIn, agreed, TERMS_VERSION).state === "consent") {
         agreed = await saveConsent(TERMS_VERSION).then(
           (r) => r.consent,
           () => agreed,
