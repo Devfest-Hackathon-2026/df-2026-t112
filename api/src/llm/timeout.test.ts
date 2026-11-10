@@ -241,7 +241,7 @@ describe("API response when Gemini is too slow", () => {
   };
 
   it("returns JSON that the screen can show, not a 502 page", async () => {
-    const app = createApp({ accessPassword: "", llm: slow, store: new MemorySessionStore(), fetchSnapshot: async () => snap });
+    const app = createApp({ llm: slow, store: new MemorySessionStore(), fetchSnapshot: async () => snap });
     const res = await app.request("/api/quiz", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: "o/r" }) });
     expect(res.status).toBe(504);
     const body = (await res.json()) as { error: string; message: string };
@@ -258,7 +258,7 @@ describe("API response when Gemini is too slow", () => {
       },
     };
     const before = Date.now();
-    const app = createApp({ accessPassword: "", llm, store: new MemorySessionStore(), fetchSnapshot: async () => snap });
+    const app = createApp({ llm, store: new MemorySessionStore(), fetchSnapshot: async () => snap });
     await app.request("/api/quiz", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: "o/r" }) });
     expect(deadline).toBeGreaterThanOrEqual(before + REQUEST_BUDGET_MS);
     expect(deadline - before).toBeLessThan(60_000);
