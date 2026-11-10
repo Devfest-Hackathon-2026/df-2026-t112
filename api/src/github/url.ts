@@ -2,7 +2,17 @@ export type RepoRef = { owner: string; repo: string };
 
 export class RepoError extends Error {
   constructor(
-    public code: "invalid_url" | "not_found" | "private" | "rate_limited" | "empty" | "upstream" | "no_authored" | "token_required",
+    public code:
+      | "invalid_url"
+      | "not_found"
+      | "private"
+      | "rate_limited"
+      | "empty"
+      | "upstream"
+      | "no_authored"
+      | "token_required"
+      /** GitHub がトークンを受け付けなかった(ログインした人のトークンは 8 時間で切れる)。 */
+      | "unauthorized",
     message: string,
   ) {
     super(message);

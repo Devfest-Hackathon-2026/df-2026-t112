@@ -1,6 +1,6 @@
 import { stripCommentsWithLines } from "./comments.js";
 import { isSourceFile, isTestPath, priority, testQuota, type RepoSize, type TreeEntry } from "./filter.js";
-import { githubClient, type FetchOptions, type LineRange, type RepoSnapshot } from "./snapshot.js";
+import { githubClient, unauthorized, type FetchOptions, type LineRange, type RepoSnapshot } from "./snapshot.js";
 import { RepoError, parseRepoUrl } from "./url.js";
 
 /** GitHub API の呼び出しが増えすぎないよう、見るコミットと行単位で調べるファイルを絞る。 */
@@ -67,7 +67,10 @@ async function blameLines(
     headers: client.headers,
     body: JSON.stringify({ query: BLAME_QUERY, variables: { o: owner, r: repo, p: path } }),
   });
-  if (res.status === 401) throw new RepoError("token_required", "行ごとの著者を調べるには GitHub トークンが必要です");
+  // トークンを付けていれば、そのトークンが受け付けられなかった(期限切れなど)
+  if (res.status === 401) {
+    throw client.headers.Authorization ? unauthorized() : new RepoError("token_required", "行ごとの著者を調べるには GitHub トークンが必要です");
+  }
   if (res.status === 403 || res.status === 429) {
     throw new RepoError("rate_limited", "GitHub API の制限に達しました。しばらくしてから再度お試しください");
   }
