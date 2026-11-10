@@ -1,5 +1,5 @@
 import { FirebaseError } from "firebase/app";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ApiError, checkRepo, listAuthors } from "../api";
 import { useAuth } from "../auth";
 import { loginErrorMessage } from "../authStatus";
@@ -8,9 +8,9 @@ import { accessFrom, checkDelay, checkFailure, repoHint, type RepoCheckState } f
 import type { RepoAuthor } from "../types";
 import { Wordmark } from "./Wordmark";
 
-type Props = { onSubmit: (url: string, author?: string) => void; error?: string | null };
+type Props = { onSubmit: (url: string, author?: string) => void; error?: string | null; footer?: ReactNode };
 
-export function RepoForm({ onSubmit, error }: Props) {
+export function RepoForm({ onSubmit, error, footer }: Props) {
   const [url, setUrl] = useState("");
   const [check, setCheck] = useState<RepoCheckState>({ state: "idle" });
   const [authors, setAuthors] = useState<RepoAuthor[]>([]);
@@ -182,6 +182,7 @@ export function RepoForm({ onSubmit, error }: Props) {
       </button>
       {error && <p className="error" role="alert">{error}</p>}
       <p className="muted hero-help">AI がコードを読んで、理解度をチェックするクイズを作ります。</p>
+      {footer}
     </form>
   );
 }

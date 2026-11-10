@@ -1,5 +1,5 @@
 import { authHeaders } from "./firebase";
-import type { Answers, GradeResult, QuizSession, RepoAuthor } from "./types";
+import type { Answers, GradeResult, QuizSession, RepoAuthor, MistakeAnswer, MistakeItem, ResolvedMistakeItem } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -54,3 +54,6 @@ export const getQuiz = (sessionId: string) => request<QuizSession>(`/api/quiz/${
 export const gradeQuiz = (sessionId: string, answers: Answers) =>
   request<GradeResult>(`/api/quiz/${sessionId}/grade`, { answers });
 
+export const listMistakes = () => request<{ open: MistakeItem[]; resolved: ResolvedMistakeItem[] }>("/api/mistakes");
+
+export const answerMistake = (id: string, text: string) => request<MistakeAnswer>(`/api/mistakes/${id}/answer`, { text });

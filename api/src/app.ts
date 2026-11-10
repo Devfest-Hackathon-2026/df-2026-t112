@@ -19,12 +19,15 @@ import { snippetsFor, toPublicQuestions } from "./quiz/public.js";
 import { PROFILES, fixedProfileFromEnv, profileForSize, type Profile } from "./quiz/profile.js";
 import { collectAsked, missedQuestions } from "./quiz/retry.js";
 import { rateLimit } from "./rateLimit.js";
+import { registerMistakeRoutes } from "./mistakes.js";
+import { MemoryMistakeStore, type MistakeStore } from "./store/mistakes.js";
 import { MemorySessionStore, type SessionStore } from "./store/session.js";
 import { MemoryStatsStore, type StatsStore } from "./store/stats.js";
 
 export type Deps = {
   store: SessionStore;
   stats: StatsStore;
+  mistakes: MistakeStore;
   /** 未指定なら初回利用時に Gemini クライアントを作る。 */
   llm?: LlmClient;
   /** userToken はログイン済みユーザー本人の GitHub トークン。あれば非公開リポジトリも読む。 */
@@ -66,6 +69,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
   const deps: Deps = {
     store: partial.store ?? new MemorySessionStore(),
     stats: partial.stats ?? new MemoryStatsStore(),
+    mistakes: partial.mistakes ?? new MemoryMistakeStore(),
     llm: partial.llm,
     auth: partial.auth,
     allowed: partial.allowed ?? parseAllowlist(process.env.ALLOWED_GITHUB_IDS),
@@ -212,7 +216,11 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
 
     const body = await c.req.json<{ answers?: unknown }>().catch(() => ({}) as { answers?: unknown });
     const answers = sanitizeAnswers(body.answers);
-    const result = await gradeQuiz(session.quiz, session.snippets, answers, getLlm(), Date.now() + REQUEST_BUDGET_MS);
+    const { mistakes, ...result } = await gradeQuiz(session.quiz, session.snippets, answers, getLlm(), Date.now() + REQUEST_BUDGET_MS);
+    // 保存に失敗しても、採点結果は返す
+    await deps.mistakes
+      .add(c.get("user").uid, mistakes.map((m) => ({ ...m, sessionId: session.id })))
+      .catch((e) => console.error("saving mistakes failed", e));
     await deps.store.saveResult(session.id, result);
     // 集計の失敗で採点結果を返せなくならないようにする
     await deps.stats.record(result).catch((e) => console.error("stats record failed", e));
@@ -246,6 +254,13 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
   );
 
   app.get("/api/stats", async (c) => c.json(await deps.stats.get()));
+
+  registerMistakeRoutes(app, {
+    mistakes: deps.mistakes,
+    getLlm,
+    // 1 問ごとに Gemini で採点するので、クイズの作成とは別の枠で数える
+    limitAnswers: perUser(Number(process.env.MISTAKE_REVIEW_PER_HOUR ?? 60)),
+  });
 
   return app;
 }

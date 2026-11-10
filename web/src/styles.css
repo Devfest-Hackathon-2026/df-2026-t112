@@ -391,3 +391,37 @@ button.choice.selected, button.choice.selected:hover:not(:disabled) { border-col
   font: inherit;
   font-size: 0.875rem;
 }
+
+.mistake-entry { display: inline-block; margin-top: 16px; }
+.mistake-result { margin-top: 12px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-variant); overflow-wrap: anywhere; }
+.mistake-result p { margin: 0 0 8px; }
+.mistake-result h3 { margin: 12px 0 4px; font-size: 0.875rem; font-weight: 500; color: var(--muted); }
+.mistake-verdict { font-weight: 500; }
+.mistake-result.ok .mistake-verdict { color: var(--success); }
+.mistake-result.ng .mistake-verdict { color: var(--danger); }
+
+.mistake-folder { width: 100%; max-width: 720px; margin: 0 auto; }
+.mistake-folder > h2 { margin: 0 0 12px; font-size: 1.25rem; font-weight: 400; }
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.tab { min-height: 44px; padding: 8px 20px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: none; color: var(--muted); }
+.tab:hover:not(:disabled) { background: var(--surface-variant); box-shadow: none; }
+.tab.active { border-bottom-color: var(--accent); color: var(--accent); }
+.tab-count { margin-left: 4px; font-variant-numeric: tabular-nums; }
+.mistake-empty { padding: 32px 0; text-align: center; }
+.mistake-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.mistake-list li { padding: 14px 0; border-top: 1px solid var(--border); }
+.mistake-list li:first-child { border-top: 0; }
+.mistake-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 6px; }
+.mistake-meta .muted { font-size: 0.8125rem; overflow-wrap: anywhere; }
+.status { padding: 1px 10px; border-radius: 8px; font-size: 0.75rem; font-weight: 500; }
+.status.open { color: var(--danger); border: 1px solid var(--danger); }
+.status.resolved { color: var(--success); border: 1px solid var(--success); }
+.mistake-question { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+summary.mistake-question { cursor: pointer; }
+.mistake-question .code-block { margin: 8px 0; white-space: normal; }
+.mistake-detail { margin-top: 10px; }
+.mistake-detail h3 { margin: 12px 0 4px; font-size: 0.875rem; font-weight: 500; color: var(--muted); }
+.mistake-detail p { margin: 0 0 8px; overflow-wrap: anywhere; }
+.mistake-back { margin-top: 24px; }
+.mistake-again { margin-left: auto; font-size: 0.8125rem; }
+.mistake-note { margin: 8px 0 0; text-align: center; }

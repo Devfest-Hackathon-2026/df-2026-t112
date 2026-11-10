@@ -38,3 +38,22 @@ export type GradeResult = {
   summary: string;
   questions: QuestionResult[];
 };
+
+export type MistakeItem = {
+  id: string;
+  repo: { owner: string; name: string };
+  reviewQuestion: string;
+  codeRef: { path: string; startLine: number; endLine: number };
+  snippet: string;
+  wrongCount: number;
+};
+
+export type MistakeAnswer = {
+  score: number;
+  correct: boolean;
+  feedback: string;
+  rubric: string;
+  explanation: string;
+};
+
+export type ResolvedMistakeItem = MistakeItem & { rubric: string; explanation: string; resolvedAt: number };

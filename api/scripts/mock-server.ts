@@ -52,6 +52,9 @@ let counter = 0;
 const llm: LlmClient = {
   async generateJson(req) {
     await new Promise((r) => setTimeout(r, 800));
+    if (req.system.includes("間違えた問題の復習")) {
+      return { score: 0.8, feedback: "これはモックのフィードバックです。要点を押さえられています。" };
+    }
     if (req.system.includes("このリクエストで作る問題")) {
       // 出題は 3 分割で呼ばれる。プロンプトが指定した数だけ返す
       const m = req.system.match(/選択式を (\d+) 問、記述式を (\d+) 問だけ/);

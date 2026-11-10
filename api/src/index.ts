@@ -9,7 +9,7 @@ try {
 
 import { createApp } from "./app.js";
 import { authFromEnv, parseAllowlist } from "./auth.js";
-import { FirestoreSessionStore, FirestoreStatsStore } from "./store/firestore.js";
+import { FirestoreMistakeStore, FirestoreSessionStore, FirestoreStatsStore } from "./store/firestore.js";
 
 // STORE=firestore のとき Firestore に保存する。未指定ならメモリ(ローカル開発用)。
 const useFirestore = process.env.STORE === "firestore";
@@ -21,7 +21,7 @@ if (auth && allowed.size === 0) console.warn("ALLOWED_GITHUB_IDS が空なので
 const app = createApp({
   auth,
   allowed,
-  ...(useFirestore ? { store: new FirestoreSessionStore(), stats: new FirestoreStatsStore() } : {}),
+  ...(useFirestore ? { store: new FirestoreSessionStore(), stats: new FirestoreStatsStore(), mistakes: new FirestoreMistakeStore() } : {}),
 });
 const port = Number(process.env.PORT ?? 8080);
 const authLabel = auth ? `firebase, allowed: ${allowed.size}` : "dev";
