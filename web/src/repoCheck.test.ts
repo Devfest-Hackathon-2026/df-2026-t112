@@ -12,7 +12,7 @@ describe("checkFailure", () => {
 });
 
 describe("repoHint", () => {
-  const signedIn = { loginEnabled: true, hasGithubToken: true, canInstall: true };
+  const signedIn = { loginEnabled: true, privateRepos: true, hasGithubToken: true, canInstall: true };
 
   it.each(["not_found", "private"])("suggests logging in again when %s and the GitHub token is gone", (code) => {
     expect(repoHint(checkFailure(code, "理由"), { ...signedIn, hasGithubToken: false })).toBe("relogin");
@@ -31,6 +31,13 @@ describe("repoHint", () => {
 
   it("stays quiet when the install page is not configured", () => {
     expect(repoHint(checkFailure("not_found", "理由"), { ...signedIn, canInstall: false })).toBeNull();
+  });
+
+  it.each(["not_found", "private"])("stays quiet for %s when the API does not read private repositories", (code) => {
+    // ログインし直しても、GitHub で許可しても読めないので、案内を出さない
+    expect(repoHint(checkFailure(code, "理由"), { ...signedIn, privateRepos: false })).toBeNull();
+    expect(repoHint(checkFailure(code, "理由"), { ...signedIn, privateRepos: false, hasGithubToken: false })).toBeNull();
+    expect(repoHint(checkFailure(code, "理由", { kind: "install" }), { ...signedIn, privateRepos: false })).toBeNull();
   });
 
   it("stays quiet without GitHub login (development mode)", () => {

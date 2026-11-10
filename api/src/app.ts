@@ -15,6 +15,7 @@ import { PROFILES, fixedProfileFromEnv, profileForSize, type Profile } from "./q
 import { collectAsked, missedQuestions } from "./quiz/retry.js";
 import { rateLimit } from "./rateLimit.js";
 import { registerMistakeRoutes } from "./mistakes.js";
+import { githubAccess, parsePrivateRepos, repoErrorMessage } from "./privateRepos.js";
 import { MemoryMistakeStore, type MistakeStore } from "./store/mistakes.js";
 import { MemorySessionStore, type SessionStore } from "./store/session.js";
 import { MemoryStatsStore, type StatsStore } from "./store/stats.js";
@@ -25,7 +26,7 @@ export type Deps = {
   mistakes: MistakeStore;
   /** 未指定なら初回利用時に Gemini クライアントを作る。 */
   llm?: LlmClient;
-  /** userToken はログイン済みユーザー本人の GitHub トークン。あれば非公開リポジトリも読む。 */
+  /** userToken はログイン済みユーザー本人の GitHub トークン。あれば、それで読む(非公開リポジトリは privateRepos のときだけ)。 */
   fetchSnapshot: (url: string, userToken?: string) => Promise<RepoSnapshot>;
   /** GitHub の数字の ID から、今のユーザー名を調べる。 */
   findLogin: (githubId: string, userToken?: string) => Promise<string>;
@@ -41,6 +42,8 @@ export type Deps = {
   auth?: Authenticator;
   /** 使ってよい人。未指定なら環境変数 ALLOWED_GITHUB_IDS。 */
   allowed: Allowlist;
+  /** 非公開リポジトリを読むか。未指定なら環境変数 PRIVATE_REPOS(on のときだけ読む)。 */
+  privateRepos: boolean;
   /** クイズの大きさを固定する。未指定なら環境変数 QUIZ_PROFILE、それも無ければリポジトリの規模で決める。 */
   profile?: Profile;
 };
@@ -63,6 +66,9 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
   }
   const fixedProfile = partial.profile ?? fixedProfileFromEnv();
   const limits = (size: RepoSize) => (fixedProfile ?? profileForSize(size)).limits;
+  const privateRepos = partial.privateRepos ?? parsePrivateRepos(process.env.PRIVATE_REPOS);
+  /** ログインした人のトークンがあれば、それで読む。非公開リポジトリは privateRepos のときだけ読む。 */
+  const github = (userToken: string | undefined) => githubAccess(userToken, privateRepos, process.env.GITHUB_TOKEN);
   const deps: Deps = {
     store: partial.store ?? new MemorySessionStore(),
     stats: partial.stats ?? new MemoryStatsStore(),
@@ -70,31 +76,16 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     llm: partial.llm,
     auth: partial.auth,
     allowed: partial.allowed ?? parseAllowlist(process.env.ALLOWED_GITHUB_IDS),
+    privateRepos,
     profile: fixedProfile,
     findLogin: partial.findLogin ?? ((githubId, userToken) => findLogin(githubId, { token: userToken ?? process.env.GITHUB_TOKEN })),
-    requireOwnCommits:
-      partial.requireOwnCommits ??
-      ((url, login, userToken) =>
-        userToken
-          ? requireOwnCommits(url, login, { token: userToken, allowPrivate: true })
-          : requireOwnCommits(url, login, { token: process.env.GITHUB_TOKEN })),
+    requireOwnCommits: partial.requireOwnCommits ?? ((url, login, userToken) => requireOwnCommits(url, login, github(userToken))),
     fetchAuthoredSnapshot:
       partial.fetchAuthoredSnapshot ??
-      ((url, login, userToken) =>
-        userToken
-          ? fetchAuthoredSnapshot(url, login, { token: userToken, allowPrivate: true, limits })
-          : fetchAuthoredSnapshot(url, login, { token: process.env.GITHUB_TOKEN, limits })),
-    checkRepo:
-      partial.checkRepo ??
-      ((url, userToken) =>
-        userToken ? checkRepo(url, { token: userToken, allowPrivate: true }) : checkRepo(url, { token: process.env.GITHUB_TOKEN })),
+      ((url, login, userToken) => fetchAuthoredSnapshot(url, login, { ...github(userToken), limits })),
+    checkRepo: partial.checkRepo ?? ((url, userToken) => checkRepo(url, github(userToken))),
     findRepoAccess: partial.findRepoAccess ?? ((url, userToken) => findRepoAccess(url, userToken)),
-    fetchSnapshot:
-      partial.fetchSnapshot ??
-      ((url, userToken) =>
-        userToken
-          ? fetchRepoSnapshot(url, { token: userToken, allowPrivate: true, limits })
-          : fetchRepoSnapshot(url, { token: process.env.GITHUB_TOKEN, limits })),
+    fetchSnapshot: partial.fetchSnapshot ?? ((url, userToken) => fetchRepoSnapshot(url, { ...github(userToken), limits })),
   };
   /**
    * 問題の題材にするコードを書いた人。自分のコードだけを問題にするので、ログインしている人から決める。
@@ -125,7 +116,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
 
   app.onError((err, c) => {
     if (err instanceof RepoError) {
-      return c.json({ error: err.code, message: err.message }, REPO_ERROR_STATUS[err.code]);
+      return c.json({ error: err.code, message: repoErrorMessage(err, deps.privateRepos) }, REPO_ERROR_STATUS[err.code]);
     }
     if (err instanceof LlmTimeoutError) {
       return c.json({ error: "llm_timeout", message: err.message }, 504);
@@ -139,8 +130,8 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
 
   app.get("/api/health", (c) => c.json({ ok: true }));
 
-  // ログインした直後に、使ってよい人かどうかを画面が確かめる
-  app.get("/api/me", (c) => c.json({ githubId: c.get("user").githubId }));
+  // ログインした直後に、使ってよい人かどうかと、非公開リポジトリを読めるかを画面が確かめる
+  app.get("/api/me", (c) => c.json({ githubId: c.get("user").githubId, privateRepos: deps.privateRepos }));
 
   /** 回数はアカウントごとに数える(学校や会社では、全員が同じ IP アドレスになることがあるため)。 */
   const perUser = (limit: number) =>
@@ -160,9 +151,9 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
       if (author) await deps.requireOwnCommits(url, author, token);
       return c.json(repo);
     } catch (e) {
-      // ログインしているのに見つからないときは、EVC(GitHub App)にそのリポジトリを読ませる画面を教える。
-      // 調べられなくても、見つからなかったことだけは返す
-      if (!(e instanceof RepoError) || e.code !== "not_found" || !token) throw e;
+      // ログインしているのに見つからないときは、EVC(GitHub App)にそのリポジトリを読ませる画面を教える
+      // (非公開リポジトリを読む設定のときだけ)。調べられなくても、見つからなかったことだけは返す
+      if (!(e instanceof RepoError) || e.code !== "not_found" || !token || !deps.privateRepos) throw e;
       const access = await deps.findRepoAccess(url, token).catch(() => undefined);
       return c.json({ error: e.code, message: e.message, ...(access ? { access } : {}) }, REPO_ERROR_STATUS.not_found);
     }
