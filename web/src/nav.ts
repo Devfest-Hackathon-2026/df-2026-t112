@@ -26,15 +26,13 @@ export function pushScreen(screen: Screen, review?: ReviewRef): void {
 }
 
 /**
- * アプリを開いたときの画面を決める。
- * 再読み込みなら履歴に残っている画面のまま。初めて開いて続きのクイズがあるときは、下に入口の画面を
- * 差し込んで、ブラウザの戻るで EVC の入口に戻れるようにする。
+ * アプリを開いたときの画面を決める。再読み込みなら履歴に残っている画面のまま。
+ * URL を打って開いたときは、続きのクイズがあっても入口から始める。画面を押す前にスクリプトで足した
+ * 履歴は Chrome の戻るで飛ばされるので、下に入口を差し込んでも前のサイトに戻ってしまうため。
  */
-export function enterApp(hasProgress: boolean, history: HistoryLike = window.history): Screen {
+export function enterApp(history: HistoryLike = window.history): Screen {
   const entry = readEntry(history.state);
   if (entry) return entry.screen;
   history.replaceState({ screen: "input" }, "");
-  if (!hasProgress) return "input";
-  history.pushState({ screen: "app" }, "");
-  return "app";
+  return "input";
 }
