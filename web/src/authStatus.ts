@@ -1,3 +1,5 @@
+import type { Consent } from "./types";
+
 /** ログインまわりで、画面に何を出すか。 */
 export type AuthStatus =
   | { state: "loading" }
@@ -6,14 +8,28 @@ export type AuthStatus =
   | { state: "notAllowed" }
   /** API はログインを求めているのに、Web に Firebase の設定が無い。 */
   | { state: "misconfigured" }
+  /** ログインはできたが、今の利用規約にまだ同意していない。renewal なら、前の版には同意していた。 */
+  | { state: "consent"; renewal: boolean }
   | { state: "ready" };
+
+/** 今の規約(termsVersion)に、18 歳以上の確認とあわせて同意しているか。 */
+export function hasAgreed(consent: Consent | null | undefined, termsVersion: string): boolean {
+  return consent?.termsVersion === termsVersion && consent.ageConfirmed === true;
+}
 
 /**
  * ログインした直後に呼ぶ GET /api/me の結果から、次の状態を決める。
  * error は失敗したときの API のエラーコード(成功なら null)。signedIn は Firebase でログインしているか。
+ * consent は API が返した規約への同意、termsVersion は今の規約の版(指定しなければ、同意は確かめない)。
  */
-export function statusFromMe(error: string | null, signedIn: boolean): AuthStatus {
-  if (error === null) return { state: "ready" };
+export function statusFromMe(error: string | null, signedIn: boolean, consent?: Consent | null, termsVersion?: string): AuthStatus {
+  if (error === null) {
+    // 規約への同意は、ログインした人にだけ求める(ログインの無い開発用では求めない)
+    if (signedIn && termsVersion !== undefined && !hasAgreed(consent, termsVersion)) {
+      return { state: "consent", renewal: consent != null };
+    }
+    return { state: "ready" };
+  }
   if (error === "not_allowed") return { state: "notAllowed" };
   if (error === "unauthorized") {
     return signedIn ? { state: "signedOut", error: "ログインできませんでした。もう一度お試しください" } : { state: "misconfigured" };

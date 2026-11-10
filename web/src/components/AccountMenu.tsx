@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../auth";
+import { Terms } from "./Terms";
 
 /** 右上のアカウントのアイコン。押すと名前とログアウトを出す。開発用(ログインなし)では出さない。 */
 export function AccountMenu() {
-  const { enabled, user, logout } = useAuth();
+  const { enabled, user, logout, consent } = useAuth();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  /** 利用規約を、ログインのあとでもいつでも読めるようにする。 */
+  const terms = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -40,11 +43,29 @@ export function AccountMenu() {
       {open && (
         <div className="account-menu" role="menu">
           <p className="account-name">{name}</p>
+          <button
+            type="button"
+            role="menuitem"
+            className="secondary block"
+            onClick={() => {
+              setOpen(false);
+              terms.current?.showModal();
+            }}
+          >
+            利用規約
+          </button>
           <button type="button" role="menuitem" className="secondary block" onClick={logout}>
             ログアウト
           </button>
         </div>
       )}
+      <dialog ref={terms} className="terms-dialog" aria-labelledby="terms-title">
+        <Terms />
+        {consent && <p className="muted">{new Date(consent.agreedAt).toLocaleDateString("ja-JP")} に同意しました</p>}
+        <form method="dialog">
+          <button className="secondary block">閉じる</button>
+        </form>
+      </dialog>
     </div>
   );
 }

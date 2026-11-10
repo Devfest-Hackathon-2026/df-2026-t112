@@ -62,7 +62,7 @@ describe("the API with private repositories off", () => {
     for (const privateRepos of [false, true]) {
       const app = createApp({ auth, allowed: parseAllowlist("*"), privateRepos });
       const res = await app.request("/api/me", { headers });
-      expect(await res.json()).toEqual({ githubId: "1", privateRepos });
+      expect(await res.json()).toEqual({ githubId: "1", privateRepos, consent: null });
     }
   });
 

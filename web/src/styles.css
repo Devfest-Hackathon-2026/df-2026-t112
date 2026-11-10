@@ -175,7 +175,11 @@ button.block { display: block; width: 100%; }
 .terms h2 { margin: 0 0 6px; font-size: 0.875rem; font-weight: 500; }
 .terms ul { margin: 0; padding-left: 1.25em; color: var(--muted); font-size: 0.8125rem; line-height: 1.6; }
 .terms li + li { margin-top: 4px; }
-.gate .terms-agree { margin: 0; color: var(--muted); font-size: 0.8125rem; }
+.terms-agree { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; font-size: 0.875rem; cursor: pointer; }
+.terms-agree input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.terms-dialog { width: min(480px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.terms-dialog::backdrop { background: rgba(32, 33, 36, 0.5); }
+.terms-dialog > p { margin: 0 0 16px; }
 
 /* 非公開リポジトリを読むための案内(ログインし直す、GitHub で EVC に読む許可を出す) */
 .reconnect { margin: -6px 0 14px; color: var(--muted); font-size: 0.875rem; }
@@ -469,6 +473,7 @@ summary.mistake-question { cursor: pointer; }
   box-shadow: var(--shadow);
 }
 .account-name { margin: 0 0 12px; font-size: 0.875rem; overflow-wrap: anywhere; }
+.account-menu button + button { margin-top: 8px; }
 
 /* 未解決の問題は、行全体を押して解き始める */
 .mistake-list li:has(> .mistake-row) { padding: 0; }

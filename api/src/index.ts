@@ -10,7 +10,7 @@ try {
 import { createApp } from "./app.js";
 import { authFromEnv, parseAllowlist } from "./auth.js";
 import { parsePrivateRepos } from "./privateRepos.js";
-import { FirestoreMistakeStore, FirestoreSessionStore, FirestoreStatsStore } from "./store/firestore.js";
+import { FirestoreMistakeStore, FirestoreSessionStore, FirestoreStatsStore, FirestoreUserStore } from "./store/firestore.js";
 
 // STORE=firestore のとき Firestore に保存する。未指定ならメモリ(ローカル開発用)。
 const useFirestore = process.env.STORE === "firestore";
@@ -25,7 +25,14 @@ const app = createApp({
   auth,
   allowed,
   privateRepos,
-  ...(useFirestore ? { store: new FirestoreSessionStore(), stats: new FirestoreStatsStore(), mistakes: new FirestoreMistakeStore() } : {}),
+  ...(useFirestore
+    ? {
+        store: new FirestoreSessionStore(),
+        stats: new FirestoreStatsStore(),
+        mistakes: new FirestoreMistakeStore(),
+        users: new FirestoreUserStore(),
+      }
+    : {}),
 });
 const port = Number(process.env.PORT ?? 8080);
 const authLabel = auth ? `firebase, allowed: ${allowed.size}` : "dev";

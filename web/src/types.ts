@@ -11,6 +11,9 @@ export type PublicQuestion = {
 };
 
 
+/** 規約への同意(#37 の UserDoc.consent)。 */
+export type Consent = { termsVersion: string; agreedAt: number; ageConfirmed: boolean };
+
 export type RepoInfo = { owner: string; repo: string; branch: string; description: string | null };
 
 export type QuizSession = { sessionId: string; repo: RepoInfo; questions: PublicQuestion[] };

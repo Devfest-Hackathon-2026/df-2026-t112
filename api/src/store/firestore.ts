@@ -7,6 +7,7 @@ import { CATEGORIES } from "../quiz/types.js";
 import { byRecent, newMistake, type Mistake, type MistakeDraft, type MistakeStore } from "./mistakes.js";
 import type { Session, SessionStore } from "./session.js";
 import { toAverages, type GlobalStats, type StatsStore } from "./stats.js";
+import type { Consent, UserStore } from "./users.js";
 
 /** Firestore の TTL ポリシー(expireAt)で自動削除する前提の保存期間。 */
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -202,4 +203,39 @@ export class FirestoreStatsStore implements StatsStore {
       Object.fromEntries(CATEGORIES.map((c) => [c, Number(d[key]?.[c] ?? 0)])) as Record<(typeof CATEGORIES)[number], number>;
     return toAverages({ count: Number(d.count ?? 0), sum: pick("sum"), n: pick("n") });
   }
+}
+
+/** users/{uid}(#37)。今は規約への同意(consent)だけを読み書きする。ほかの項目は、アカウントの作成で足す。 */
+export class FirestoreUserStore implements UserStore {
+  constructor(private db: Firestore = getDb()) {}
+
+  private doc(uid: string) {
+    return this.db.collection("users").doc(uid);
+  }
+
+  async getConsent(uid: string): Promise<Consent | null> {
+    return readConsent((await this.doc(uid).get()).get("consent"));
+  }
+
+  async saveConsent(uid: string, consent: Consent): Promise<void> {
+    await this.doc(uid).set(
+      {
+        consent: {
+          termsVersion: consent.termsVersion,
+          agreedAt: Timestamp.fromMillis(consent.agreedAt),
+          ageConfirmed: consent.ageConfirmed,
+        },
+      },
+      // 同じドキュメントのほかの項目(アカウントの作成で足すもの)は消さない
+      { merge: true },
+    );
+  }
+}
+
+/** 保存した consent を読む。形が違えば、同意していないものとして扱う。 */
+export function readConsent(value: unknown): Consent | null {
+  const c = value as { termsVersion?: unknown; agreedAt?: unknown; ageConfirmed?: unknown } | null | undefined;
+  if (typeof c?.termsVersion !== "string" || typeof c.ageConfirmed !== "boolean") return null;
+  const agreedAt = c.agreedAt instanceof Timestamp ? c.agreedAt.toMillis() : typeof c.agreedAt === "number" ? c.agreedAt : null;
+  return agreedAt === null ? null : { termsVersion: c.termsVersion, agreedAt, ageConfirmed: c.ageConfirmed };
 }

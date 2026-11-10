@@ -2,6 +2,7 @@ import { authHeaders } from "./firebase";
 import type {
   Answer,
   Answers,
+  Consent,
   GradeResult,
   QuizSession,
   MistakeAnswer,
@@ -55,7 +56,11 @@ async function request<T>(path: string, body?: unknown, signalOrOptions?: AbortS
 }
 
 /** ログインしている人が、使ってよい人かどうか。許可リストに無ければ not_allowed で失敗する。privateRepos は、API が非公開リポジトリを読むか。 */
-export const getMe = () => request<{ githubId: string; privateRepos?: boolean }>("/api/me");
+export const getMe = () => request<{ githubId: string; privateRepos?: boolean; consent?: Consent | null }>("/api/me");
+
+/** 規約に同意したことを記録する。18 歳以上の確認も兼ねる。 */
+export const saveConsent = (termsVersion: string) =>
+  request<{ consent: Consent }>("/api/me/consent", { termsVersion, ageConfirmed: true });
 
 export const checkRepo = (url: string, signal?: AbortSignal) =>
   request<{ owner: string; repo: string; description: string | null }>("/api/repo/check", { url }, signal);
