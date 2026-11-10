@@ -58,6 +58,8 @@ export type GenerateOptions = {
   profile?: Profile;
   /** これまでに出した問題。同じ問題を出さない。 */
   asked?: AskedQuestion[];
+  /** この時刻(ミリ秒)までに生成を終える。 */
+  deadline?: number;
   rng?: Rng;
   /** 形式不正のときに再試行する回数(チャンクごと)。 */
   retries?: number;
@@ -75,6 +77,7 @@ async function generateChunk(
   retries: number,
   log: (message: string) => void,
   context: QuizContext = {},
+  deadline?: number,
 ): Promise<GeneratedQuestion[]> {
   const { system, user } = buildQuizPrompt(snap, spec, primaryFiles(snap.files.map((f) => f.path), index, chunks), context);
   let lastProblem = "";
@@ -85,7 +88,7 @@ async function generateChunk(
 前回の出力には問題がありました: ${lastProblem}
 修正して出力してください。`;
     const started = Date.now();
-    const raw = await llm.generateJson({ system, user: prompt, schema: generatedQuizSchema });
+    const raw = await llm.generateJson({ system, user: prompt, schema: generatedQuizSchema, deadline });
     log(`chunk ${index + 1} attempt ${attempt + 1}: gemini ${Date.now() - started}ms`);
 
     const parsed = generatedQuizSchema.safeParse(raw);
@@ -119,7 +122,7 @@ export async function generateQuiz(snap: RepoSnapshot, llm: LlmClient, opts: Gen
   const all: GeneratedQuestion[] = [];
   for (const [i, spec] of specs.entries()) {
     const context = { asked: opts.asked, sameQuiz: all.map(toAsked) };
-    all.push(...(await generateChunk(snap, llm, spec, i, specs.length, retries, log, context)));
+    all.push(...(await generateChunk(snap, llm, spec, i, specs.length, retries, log, context, opts.deadline)));
   }
   return toQuiz(snap, all, opts.rng);
 }
@@ -129,12 +132,12 @@ export async function generateSimilarQuiz(
   snap: RepoSnapshot,
   llm: LlmClient,
   missed: MissedQuestion[],
-  opts: Pick<GenerateOptions, "rng" | "retries" | "log" | "asked"> = {},
+  opts: Pick<GenerateOptions, "rng" | "retries" | "log" | "asked" | "deadline"> = {},
 ): Promise<Quiz> {
   const questions = await generateChunk(snap, llm, planRetry(missed), 0, 1, opts.retries ?? 1, opts.log ?? (() => {}), {
     missed,
     asked: opts.asked,
-  });
+  }, opts.deadline);
   return toQuiz(snap, questions, opts.rng);
 }
 
