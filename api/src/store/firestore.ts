@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { getApps, initializeApp } from "firebase-admin/app";
-import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, getFirestore, type Firestore } from "firebase-admin/firestore";
 import type { GradeResult } from "../grading/grade.js";
 import { CATEGORIES } from "../quiz/types.js";
+import { byRecent, newMistake, type Mistake, type MistakeDraft, type MistakeStore } from "./mistakes.js";
 import type { Session, SessionStore } from "./session.js";
 import { toAverages, type GlobalStats, type StatsStore } from "./stats.js";
 
@@ -83,6 +84,70 @@ export class FirestoreSessionStore implements SessionStore {
         categories: result.categories,
         gradedAt: Date.now(),
       });
+  }
+}
+
+export function serializeMistake(m: Mistake) {
+  const { id: _id, firstWrongAt, lastAttemptAt, resolvedAt, ...rest } = m;
+  return {
+    ...rest,
+    firstWrongAt: Timestamp.fromMillis(firstWrongAt),
+    lastAttemptAt: Timestamp.fromMillis(lastAttemptAt),
+    resolvedAt: resolvedAt === null ? null : Timestamp.fromMillis(resolvedAt),
+  };
+}
+
+export function deserializeMistake(id: string, d: Record<string, unknown>): Mistake {
+  const millis = (v: unknown) => (v as Timestamp).toMillis();
+  return {
+    ...(d as Omit<Mistake, "id" | "firstWrongAt" | "lastAttemptAt" | "resolvedAt">),
+    id,
+    firstWrongAt: millis(d.firstWrongAt),
+    lastAttemptAt: millis(d.lastAttemptAt),
+    resolvedAt: d.resolvedAt ? millis(d.resolvedAt) : null,
+  };
+}
+
+export class FirestoreMistakeStore implements MistakeStore {
+  constructor(private db: Firestore = getDb()) {}
+
+  private col(uid: string) {
+    return this.db.collection("users").doc(uid).collection("mistakes");
+  }
+
+  async add(uid: string, drafts: MistakeDraft[]): Promise<void> {
+    const batch = this.db.batch();
+    for (const draft of drafts) {
+      const mistake = newMistake(draft, Date.now());
+      batch.set(this.col(uid).doc(mistake.id), serializeMistake(mistake));
+    }
+    await batch.commit();
+  }
+
+  private async listByStatus(uid: string, status: Mistake["status"], limit: number): Promise<Mistake[]> {
+    // status の等価条件だけなら複合インデックス不要。並び替えはメモリで行う
+    const snaps = await this.col(uid).where("status", "==", status).limit(500).get();
+    return snaps.docs.map((d) => deserializeMistake(d.id, d.data())).sort(byRecent).slice(0, limit);
+  }
+
+  listOpen(uid: string, limit: number): Promise<Mistake[]> {
+    return this.listByStatus(uid, "open", limit);
+  }
+
+  listResolved(uid: string, limit: number): Promise<Mistake[]> {
+    return this.listByStatus(uid, "resolved", limit);
+  }
+
+  async get(uid: string, id: string): Promise<Mistake | undefined> {
+    const snap = await this.col(uid).doc(id).get();
+    return snap.exists ? deserializeMistake(id, snap.data()!) : undefined;
+  }
+
+  async recordAnswer(uid: string, id: string, correct: boolean): Promise<void> {
+    const now = Timestamp.now();
+    await this.col(uid)
+      .doc(id)
+      .update(correct ? { status: "resolved", resolvedAt: now, lastAttemptAt: now } : { status: "open", resolvedAt: null, wrongCount: FieldValue.increment(1), lastAttemptAt: now });
   }
 }
 
