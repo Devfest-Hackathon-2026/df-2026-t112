@@ -64,13 +64,18 @@ main.wide { max-width: 1280px; padding-top: 16px; padding-bottom: 0; }
 
 /* 上部のバー */
 .app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 12px;
   min-height: 56px;
   padding: 8px 24px;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
+.app-brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
 .app-bar.plain { border-bottom-color: transparent; }
 .app-bar .muted { font-size: 0.8rem; }
 
@@ -406,7 +411,6 @@ summary.mistake-question { cursor: pointer; }
 .mistake-detail { margin-top: 10px; }
 .mistake-detail h3 { margin: 12px 0 4px; font-size: 0.875rem; font-weight: 500; color: var(--muted); }
 .mistake-detail p { margin: 0 0 8px; overflow-wrap: anywhere; }
-.mistake-back { margin-top: 24px; }
 .mistake-again { margin-left: auto; font-size: 0.8125rem; }
 .mistake-note { margin: 8px 0 0; text-align: center; }
 
