@@ -2,6 +2,7 @@ import { FirebaseError } from "firebase/app";
 import { useState, type ReactNode } from "react";
 import { githubIdOf, useAuth } from "../auth";
 import { loginErrorMessage } from "../authStatus";
+import { Terms } from "./Terms";
 import { Wordmark } from "./Wordmark";
 
 /** ログインして、使ってよいと確かめられた人だけに中を見せる。 */
@@ -66,6 +67,8 @@ function LoginScreen({ error }: { error?: string }) {
   return (
     <Gate>
       <p className="muted">GitHub のアカウントでログインしてください</p>
+      <Terms />
+      <p className="terms-agree">GitHub でログインすると、この利用規約に同意したものとします。</p>
       <button onClick={handle} disabled={busy}>
         GitHub でログイン
       </button>
