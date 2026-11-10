@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessFrom, checkDelay, checkFailure, repoHint, type RepoAccess } from "./repoCheck";
+import { accessFrom, checkDelay, checkFailure, repoHint, type RepoAccess, findMe } from "./repoCheck";
 
 describe("checkFailure", () => {
   it.each(["invalid_url", "not_found", "private"])("shows %s as an error", (code) => {
@@ -65,5 +65,24 @@ describe("checkDelay", () => {
   it("checks a pasted URL right away and waits while typing", () => {
     expect(checkDelay(true)).toBe(0);
     expect(checkDelay(false)).toBeGreaterThan(0);
+  });
+});
+
+describe("findMe", () => {
+  const authors = [
+    { login: "alice", githubId: "1", commits: 3 },
+    { login: "bob", githubId: "2", commits: 5 },
+  ];
+
+  it("finds the signed-in person by id", () => {
+    expect(findMe(authors, "2")?.login).toBe("bob");
+  });
+
+  it("returns nothing for someone who has not committed", () => {
+    expect(findMe(authors, "9")).toBeUndefined();
+  });
+
+  it("returns nothing when not signed in", () => {
+    expect(findMe(authors, undefined)).toBeUndefined();
   });
 });

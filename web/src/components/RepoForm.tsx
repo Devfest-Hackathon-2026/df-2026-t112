@@ -1,25 +1,27 @@
 import { FirebaseError } from "firebase/app";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, checkRepo, listAuthors } from "../api";
-import { useAuth } from "../auth";
+import { githubIdOf, useAuth } from "../auth";
 import { loginErrorMessage } from "../authStatus";
 import { githubAppInstallUrl } from "../githubApp";
-import { accessFrom, checkDelay, checkFailure, repoHint, type RepoCheckState } from "../repoCheck";
+import { accessFrom, checkDelay, checkFailure, findMe, repoHint, type RepoCheckState } from "../repoCheck";
 import type { RepoAuthor } from "../types";
 import { Wordmark } from "./Wordmark";
 
-type Props = { onSubmit: (url: string, author?: string) => void; error?: string | null; footer?: ReactNode };
+type Props = { onSubmit: (url: string, author?: string) => void; error?: string | null };
 
-export function RepoForm({ onSubmit, error, footer }: Props) {
+export function RepoForm({ onSubmit, error }: Props) {
   const [url, setUrl] = useState("");
   const [check, setCheck] = useState<RepoCheckState>({ state: "idle" });
-  const [authors, setAuthors] = useState<RepoAuthor[]>([]);
-  const [author, setAuthor] = useState("");
+  /** コミットした人の一覧と、それがどの URL のものか。 */
+  const [authors, setAuthors] = useState<{ url: string; list: RepoAuthor[] } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [reconnectError, setReconnectError] = useState<string | null>(null);
   // 増やすと、同じ URL をもう一度確かめる
   const [recheck, setRecheck] = useState(0);
   const pasted = useRef(false);
-  const { enabled, hasGithubToken, reconnectGithub } = useAuth();
+  const { enabled, hasGithubToken, reconnectGithub, user } = useAuth();
+  const githubId = githubIdOf(user);
 
   useEffect(() => {
     const value = url.trim();
@@ -78,15 +80,15 @@ export function RepoForm({ onSubmit, error, footer }: Props) {
     }
   };
 
-  // 読めるリポジトリなら、コミットした人を選べるようにする。取得に失敗しても全体のクイズは作れる
+  // 読めるリポジトリなら、本人がコミットしているかを調べる。取得に失敗しても全体のクイズは作れる
   useEffect(() => {
-    setAuthors([]);
-    setAuthor("");
+    setAuthors(null);
     if (check.state !== "ok") return;
     const abort = new AbortController();
-    listAuthors(url.trim(), abort.signal)
+    const value = url.trim();
+    listAuthors(value, abort.signal)
       .then((r) => {
-        if (!abort.signal.aborted) setAuthors(r.authors);
+        if (!abort.signal.aborted) setAuthors({ url: value, list: r.authors });
       })
       .catch(() => {});
     return () => abort.abort();
@@ -96,9 +98,17 @@ export function RepoForm({ onSubmit, error, footer }: Props) {
 
   const blocked = check.state === "error";
 
-  const handle = (e: FormEvent) => {
+  const me = authors ? findMe(authors.list, githubId) : undefined;
+
+  const handle = async (e: FormEvent) => {
     e.preventDefault();
-    if (url.trim() && !blocked) onSubmit(url.trim(), author || undefined);
+    const value = url.trim();
+    if (!value || blocked || submitting) return;
+    setSubmitting(true);
+    // 確認が終わる前に押されたときは、ここで本人のコミットを調べる
+    const list = authors?.url === value ? authors.list : await listAuthors(value).then((r) => r.authors).catch(() => []);
+    setSubmitting(false);
+    onSubmit(value, findMe(list, githubId)?.login);
   };
 
   return (
@@ -164,25 +174,16 @@ export function RepoForm({ onSubmit, error, footer }: Props) {
         </div>
       )}
       {reconnectError && <p className="error">{reconnectError}</p>}
-      {authors.length > 0 && (
-        <div className="scope">
-          <label htmlFor="scope-author">出題の範囲</label>
-          <select id="scope-author" value={author} onChange={(e) => setAuthor(e.target.value)}>
-            <option value="">リポジトリ全体</option>
-            {authors.map((a) => (
-              <option key={a.login} value={a.login}>
-                {a.login} が書いたコード({a.commits} コミット)
-              </option>
-            ))}
-          </select>
-        </div>
+      {authors && githubId !== undefined && (
+        <p className="muted scope">
+          {me ? `出題の範囲: あなたが書いたコード(${me.commits} コミット)` : "このリポジトリにあなたのコミットが見つからないので、全体から出題します"}
+        </p>
       )}
-      <button type="submit" disabled={!url.trim() || blocked}>
+      <button type="submit" disabled={!url.trim() || blocked || submitting}>
         クイズを作る
       </button>
       {error && <p className="error" role="alert">{error}</p>}
       <p className="muted hero-help">AI がコードを読んで、理解度をチェックするクイズを作ります。</p>
-      {footer}
     </form>
   );
 }
