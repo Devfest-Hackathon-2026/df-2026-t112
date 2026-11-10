@@ -46,9 +46,10 @@ API は、GitHub でログインして、許可リストに入っている人だ
 | 項目 | 値 |
 |---|---|
 | Homepage URL | `https://<project>.web.app` |
-| Callback URL | `https://<project>.firebaseapp.com/__/auth/handler`(手順 3 で Firebase の画面に出る URL と同じにする) |
+| Callback URL(Redirect URI と表示されることもある) | `https://<project>.firebaseapp.com/__/auth/handler`(手順 3 で Firebase の画面に出る URL と同じにする) |
 | Expire user authorization tokens | 付けたまま(トークンは 8 時間で切れ、切れたらログインし直す) |
-| Request user authorization (OAuth) during installation | 付けない |
+| Request user authorization (OAuth) during installation | 付けない(付けると、インストールのあとに GitHub が Callback URL へ直接戻すので、Firebase の画面に「Unable to process request due to missing initial state」と出る) |
+| Setup URL | 空のまま |
 | Webhook | Active を外す(使わない) |
 | Repository permissions | `Contents: Read-only` と `Metadata: Read-only` だけ |
 | Account permissions | すべて No access |
@@ -61,7 +62,7 @@ API は、GitHub でログインして、許可リストに入っている人だ
 gh api users/<ユーザー名> --jq .id
 ```
 
-5. 非公開リポジトリを読ませたい利用者は、GitHub App をそのリポジトリにインストールする(`https://github.com/apps/<App の名前>` の Install)。組織のリポジトリは、組織のオーナーの承認が要る。
+5. 非公開リポジトリを読ませたい利用者は、GitHub App をそのリポジトリにインストールする(`https://github.com/apps/<App の名前>` の Install)。ログインだけでは読めない(GitHub App は、インストールされたリポジトリしか読めない)。「All repositories」を選べば、自分のリポジトリは、あとから作るものも含めてすべて読める。組織のリポジトリは、組織のオーナーの承認が要る。画面は、ログインしているのにリポジトリが見つからないときに、案内を出す。持ち主のアカウントにまだ EVC が入っていなければインストールの画面(`VITE_GITHUB_APP_SLUG` を設定したとき)、すでに入っていれば、そのインストールの設定の画面(リポジトリを足す画面)。インストールの画面には、すでに入れたアカウントが出てこないため。どちらかは、API がログインした人の GitHub トークンで `GET /user/installations` を呼んで調べる。
 
 ## 4. API を Cloud Run へ
 
@@ -89,7 +90,7 @@ gcloud run services update evc-api --region asia-northeast1 --update-env-vars "A
 
 ## 5. Web を Hosting へ
 
-ビルドのときに `VITE_FIREBASE_*`(`.env.example` 参照)が必要です。無いと、画面に「ログインの設定がありません」と出ます。
+ビルドのときに `VITE_FIREBASE_*`(`.env.example` 参照)が必要です。無いと、画面に「ログインの設定がありません」と出ます。`VITE_GITHUB_APP_SLUG`(GitHub App の URL の名前。`deploy.yml` では `evc-escape-vibecoder`)も渡すと、非公開リポジトリが読めないときに、GitHub App のインストールの案内を出します。
 
 ```sh
 npm ci
