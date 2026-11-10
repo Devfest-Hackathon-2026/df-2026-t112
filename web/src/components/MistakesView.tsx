@@ -102,7 +102,7 @@ export function MistakesView() {
             <p className="muted mistake-empty">解決済みの問題はまだありません。</p>
           ) : (
             <>
-              <p className="muted mistake-note">解き直して 0.7 点に届かなかった問題は、未解決に戻ります。</p>
+              <p className="muted mistake-note">解き直して 70 点に届かなかった問題は、未解決に戻ります。</p>
               <ul className="mistake-list">
                 {folder.resolved.map((m) => (
                   <li key={m.id}>
