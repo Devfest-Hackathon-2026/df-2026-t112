@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Answer, PublicQuestion } from "../types";
+import { CodeBlock } from "./CodeBlock";
 
 type Props = {
   index: number;
@@ -28,9 +29,7 @@ export function QuestionCard({ index, question: q, answer, onChange, disabled }:
           <figcaption>
             {q.codeRef.path} L{q.codeRef.startLine}-{q.codeRef.endLine}
           </figcaption>
-          <pre>
-            <code>{q.snippet}</code>
-          </pre>
+          <CodeBlock code={q.snippet} startLine={q.codeRef.startLine} />
         </figure>
       )}
 
