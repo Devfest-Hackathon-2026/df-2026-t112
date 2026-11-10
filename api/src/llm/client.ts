@@ -8,6 +8,8 @@ export type JsonRequest = {
   /** zod スキーマ。Gemini の構造化出力と、返却値の検証に使う。 */
   schema: z.ZodType;
   temperature?: number;
+  /** この時刻(ミリ秒)までに終わらせる。未指定なら 1 回あたりの上限だけを守る。 */
+  deadline?: number;
 };
 
 /** テストで差し替えられるように、Gemini への依存はこの interface の裏に隠す。 */
@@ -17,7 +19,44 @@ export interface LlmClient {
 
 export class LlmError extends Error {}
 
-const REQUEST_TIMEOUT_MS = 120_000;
+/** Gemini の応答が時間内に返らなかった。少し待てば成功する可能性がある。 */
+export class LlmTimeoutError extends LlmError {
+  constructor() {
+    super("AI の応答に時間がかかっています。しばらくしてから、もう一度お試しください");
+  }
+}
+
+/**
+ * 1 リクエスト全体の制限時間。Firebase Hosting 経由だと約 60 秒で打ち切られ、
+ * 利用者には原因の分からない 502 が返るので、それより先に自分で切り上げる。
+ */
+export const REQUEST_BUDGET_MS = 55_000;
+
+/**
+ * 1 回の呼び出しの上限。普段は長くても 15 秒ほどで返る。
+ * 主モデルが固まっても、GitHub からの取得を含めて、予備モデルを試す時間を残せる長さにする。
+ */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** 残り時間がこれより短ければ、呼び出しても間に合わないので諦める。 */
+const MIN_CALL_MS = 2_000;
+
+class DeadlineExceeded extends Error {}
+
+/** 呼び出しが時間切れになったか(Gemini の 504、SDK のタイムアウト、全体の制限時間)。 */
+export function isTimeoutError(e: unknown): boolean {
+  if (e instanceof DeadlineExceeded) return true;
+  const err = e as { status?: unknown; name?: unknown; message?: unknown };
+  return err?.status === 504 || err?.name === "AbortError" || err?.name === "TimeoutError" || /timed? ?out|aborted/i.test(String(err?.message));
+}
+
+/** ログ用のエラーの理由。長さを抑え、API キーが含まれていても出さない。 */
+export function errorReason(e: unknown): string {
+  return String((e as Error)?.message ?? e)
+    .replace(/key=[^&\s"]+/gi, "key=***")
+    .replace(/\s+/g, " ")
+    .slice(0, 300);
+}
 
 /**
  * 思考モードは出力前に時間がかかる。出題・採点は深い推論が要らないので既定は LOW。
@@ -47,10 +86,10 @@ export const DEFAULT_MODEL = "gemini-3-flash-preview";
  */
 export const DEFAULT_FALLBACK_MODELS = ["gemini-flash-lite-latest", "gemini-3.1-flash-lite"];
 
-/** 別のモデルなら成功する可能性があるエラーか: 利用枠切れ(429)とモデル終了(404)。 */
+/** 別のモデルなら成功する可能性があるエラーか: 利用枠切れ(429)、モデル終了(404)、時間切れ。 */
 export function shouldFallBack(e: unknown): boolean {
   const status = (e as { status?: unknown })?.status;
-  return status === 429 || status === 404;
+  return status === 429 || status === 404 || isTimeoutError(e);
 }
 
 export function fallbackModelsFromEnv(value = process.env.GEMINI_FALLBACK_MODELS): string[] {
@@ -75,6 +114,8 @@ export type GeminiClientOptions = {
 
 /** 枠切れ・終了したモデルを、しばらく試さない時間。 */
 const COOLDOWN_MS = { 429: 10 * 60_000, 404: 60 * 60_000 } as const;
+/** 固まったモデルは一時的な不調のことが多いので、同じリクエストの続きで避ける程度にする。 */
+const TIMEOUT_COOLDOWN_MS = 30_000;
 
 /** Gemini SDK の例外を、画面に出せる原因付きのメッセージにする。 */
 export function describeGeminiError(e: unknown, model: string): string {
@@ -116,11 +157,16 @@ export function createGeminiClient(opts: GeminiClientOptions = {}): LlmClient {
   const skipUntil = new Map<string, number>();
 
   return {
-    async generateJson({ system, user, schema, temperature }) {
+    async generateJson({ system, user, schema, temperature, deadline }) {
       const { $schema: _ignored, ...jsonSchema } = z.toJSONSchema(schema) as Record<string, unknown>;
+      /** 残り時間に合わせた、この呼び出しのタイムアウト。 */
+      const timeoutForCall = () => {
+        const remaining = deadline === undefined ? REQUEST_TIMEOUT_MS : deadline - now();
+        if (remaining < MIN_CALL_MS) throw new DeadlineExceeded();
+        return Math.min(REQUEST_TIMEOUT_MS, remaining);
+      };
+
       const config = {
-        // 応答が返らないまま待ち続けないようにする
-        httpOptions: { timeout: REQUEST_TIMEOUT_MS },
         thinkingConfig: thinkingConfigFromEnv(),
         systemInstruction: system,
         responseMimeType: "application/json",
@@ -138,7 +184,8 @@ export function createGeminiClient(opts: GeminiClientOptions = {}): LlmClient {
       for (const [i, model] of order.entries()) {
         lastModel = model;
         try {
-          res = await withRetry(() => call({ model, contents: user, config }), {
+          // 応答が返らないまま待ち続けないようにする
+          res = await withRetry(() => call({ model, contents: user, config: { ...config, httpOptions: { timeout: timeoutForCall() } } }), {
             onRetry: (e, attempt, delay) =>
               console.warn(`gemini transient error (HTTP ${(e as { status?: number }).status}), retry ${attempt} in ${delay}ms`),
           });
@@ -147,14 +194,20 @@ export function createGeminiClient(opts: GeminiClientOptions = {}): LlmClient {
         } catch (e) {
           lastError = e;
           const status = (e as { status?: number }).status;
+          if (e instanceof DeadlineExceeded) break;
+          if (shouldFallBack(e)) {
+            const cooldown = status === 429 || status === 404 ? COOLDOWN_MS[status] : TIMEOUT_COOLDOWN_MS;
+            skipUntil.set(model, now() + cooldown);
+            console.warn(`gemini: ${model} unavailable (${status ? `HTTP ${status}` : "timeout"}): ${errorReason(e)}`);
+          }
           if (!shouldFallBack(e) || i === order.length - 1) break;
-          skipUntil.set(model, now() + COOLDOWN_MS[status as 429 | 404]);
-          console.warn(`gemini: ${model} unavailable (HTTP ${status}), trying ${order[i + 1]}`);
+          console.warn(`gemini: trying ${order[i + 1]}`);
         }
       }
 
       if (!res) {
         console.error("gemini error:", lastError);
+        if (isTimeoutError(lastError)) throw new LlmTimeoutError();
         throw new LlmError(describeGeminiError(lastError, lastModel));
       }
       const text = res.text;

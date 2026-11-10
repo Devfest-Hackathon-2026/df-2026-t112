@@ -102,10 +102,11 @@ export async function reviewQuiz(
   quiz: Quiz,
   freeItems: FreeItem[],
   choiceResults: QuestionResult[],
+  deadline?: number,
 ): Promise<Review> {
   const user = [renderChoiceResults(quiz, choiceResults), ...freeItems.map(renderFreeItem)].join("\n\n");
 
-  const raw = await llm.generateJson({ system: SYSTEM, user, schema: reviewSchema, temperature: 0.3 });
+  const raw = await llm.generateJson({ system: SYSTEM, user, schema: reviewSchema, temperature: 0.3, deadline });
   const parsed = reviewSchema.safeParse(raw);
   if (!parsed.success) throw new LlmError("採点結果を解釈できませんでした");
   const byId = new Map(parsed.data.grades.map((g) => [g.id, g]));

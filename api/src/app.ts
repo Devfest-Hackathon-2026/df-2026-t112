@@ -10,7 +10,7 @@ import {
   type RepoAuthor,
 } from "./github/authorship.js";
 import { RepoError } from "./github/url.js";
-import { LlmError, createGeminiClient, type LlmClient } from "./llm/client.js";
+import { LlmError, LlmTimeoutError, REQUEST_BUDGET_MS, createGeminiClient, type LlmClient } from "./llm/client.js";
 import { gradeQuiz } from "./grading/grade.js";
 import type { Answer } from "./grading/scoring.js";
 import { analyzeWeakness } from "./grading/weakness.js";
@@ -111,6 +111,9 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     if (err instanceof RepoError) {
       return c.json({ error: err.code, message: err.message }, REPO_ERROR_STATUS[err.code]);
     }
+    if (err instanceof LlmTimeoutError) {
+      return c.json({ error: "llm_timeout", message: err.message }, 504);
+    }
     if (err instanceof LlmError) {
       return c.json({ error: "llm", message: err.message }, 502);
     }
@@ -159,10 +162,11 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
       return c.json({ error: "invalid_author", message: "GitHub のユーザー名の形式が正しくありません" }, 400);
     }
     const t0 = Date.now();
+    const deadline = t0 + REQUEST_BUDGET_MS;
     const snap = await readRepo(String(body.url ?? ""), author, c.get("githubToken"));
     const chars = snap.files.reduce((n, f) => n + f.content.length, 0);
     console.log(`[quiz] ${snap.owner}/${snap.repo}: fetched ${snap.files.length} files, ${chars} chars in ${Date.now() - t0}ms`);
-    const quiz = await generateQuiz(snap, getLlm(), { profile: profileFor(snap), log: (m) => console.log(`[quiz] ${m}`) });
+    const quiz = await generateQuiz(snap, getLlm(), { profile: profileFor(snap), deadline, log: (m) => console.log(`[quiz] ${m}`) });
     console.log(`[quiz] done in ${Date.now() - t0}ms`);
     const snippets = snippetsFor(quiz, snap.files);
     const session = await deps.store.create({ quiz, snippets, author, uid: c.get("user")?.uid });
@@ -186,7 +190,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
 
     const body = await c.req.json<{ answers?: unknown }>().catch(() => ({}) as { answers?: unknown });
     const answers = sanitizeAnswers(body.answers);
-    const result = await gradeQuiz(session.quiz, session.snippets, answers, getLlm());
+    const result = await gradeQuiz(session.quiz, session.snippets, answers, getLlm(), Date.now() + REQUEST_BUDGET_MS);
     await deps.store.saveResult(session.id, result);
     // 集計の失敗で採点結果を返せなくならないようにする
     await deps.stats.record(result).catch((e) => console.error("stats record failed", e));
@@ -202,12 +206,13 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     const asked = collectAsked(session.asked, session.quiz);
     const log = (m: string) => console.log(`[retry] ${m}`);
 
+    const deadline = Date.now() + REQUEST_BUDGET_MS;
     const { owner, repo } = session.quiz.repo;
     const snap = await readRepo(`https://github.com/${owner}/${repo}`, session.author, c.get("githubToken"));
     const quiz =
       missed.length > 0
-        ? await generateSimilarQuiz(snap, getLlm(), missed, { asked, log })
-        : await generateQuiz(snap, getLlm(), { profile: profileFor(snap).name === "tiny" ? PROFILES.tiny : PROFILES.mini, asked, log });
+        ? await generateSimilarQuiz(snap, getLlm(), missed, { asked, deadline, log })
+        : await generateQuiz(snap, getLlm(), { profile: profileFor(snap).name === "tiny" ? PROFILES.tiny : PROFILES.mini, asked, deadline, log });
     const snippets = snippetsFor(quiz, snap.files);
     const next = await deps.store.create({ quiz, snippets, asked, author: session.author, uid: c.get("user")?.uid });
     return c.json({ sessionId: next.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });

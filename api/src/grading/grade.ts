@@ -25,6 +25,7 @@ export async function gradeQuiz(
   snippets: Record<string, string>,
   answers: Record<string, Answer>,
   llm: LlmClient,
+  deadline?: number,
 ): Promise<GradeResult> {
   const choiceResults = quiz.questions.filter((q) => q.type === "choice").map((q) => gradeChoice(q, answers[q.id]));
 
@@ -36,6 +37,7 @@ export async function gradeQuiz(
       .filter((q) => q.type === "free")
       .map((q) => ({ question: q, answer: answers[q.id], snippet: snippets[q.id] ?? "" })),
     choiceResults,
+    deadline,
   );
 
   const byId = new Map([...choiceResults, ...freeResults].map((r) => [r.id, r]));
