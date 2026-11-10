@@ -2,8 +2,7 @@
   --bg: #ffffff;
   --surface: #ffffff;
   --surface-variant: #f8f9fa;
-  --row: #f1f3f4;
-  --row-hover: #e8eaed;
+  --row-hover: #f1f3f4;
   --text: #202124;
   --muted: #5f6368;
   --border: #dadce0;
@@ -25,8 +24,7 @@
     --bg: #202124;
     --surface: #292a2d;
     --surface-variant: #2d2e31;
-    --row: #2d2e31;
-    --row-hover: #3c4043;
+    --row-hover: #2d2e31;
     --text: #e8eaed;
     --muted: #9aa0a6;
     --border: #3c4043;
@@ -403,7 +401,7 @@ button.choice.selected, button.choice.selected:hover:not(:disabled) { border-col
 .tab-count { margin-left: 4px; font-variant-numeric: tabular-nums; }
 .mistake-empty { padding: 32px 0; text-align: center; }
 .mistake-list { list-style: none; padding: 0; margin: 12px 0 0; }
-.mistake-list li { margin-top: 8px; padding: 14px 16px; border-radius: 8px; background: var(--row); }
+.mistake-list li { margin-top: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; }
 .mistake-list li:first-child { margin-top: 0; }
 .mistake-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 6px; }
 .mistake-meta .muted { font-size: 0.8125rem; overflow-wrap: anywhere; }
@@ -412,8 +410,7 @@ button.choice.selected, button.choice.selected:hover:not(:disabled) { border-col
 .status.resolved { color: var(--success); border: 1px solid var(--success); }
 .mistake-question { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 summary.mistake-question { cursor: pointer; }
-/* inline-block にして、問題文の下線がコードに付かないようにする */
-.mistake-question .code-block { display: inline-block; width: 100%; margin: 8px 0 0; vertical-align: top; white-space: normal; }
+.mistake-question .code-block { margin: 8px 0; white-space: normal; }
 .mistake-detail { margin-top: 10px; }
 .mistake-detail h3 { margin: 12px 0 4px; font-size: 0.875rem; font-weight: 500; color: var(--muted); }
 .mistake-detail p { margin: 0 0 8px; overflow-wrap: anywhere; }
@@ -484,12 +481,9 @@ button.mistake-row {
   text-align: left;
 }
 button.mistake-row:hover:not(:disabled) { background: none; box-shadow: none; }
-/* 触れた問題は下線と色で示す。スマホでは押したあとも残るので、カーソルのある端末だけにする */
-button.mistake-row:focus-visible .mistake-question { color: var(--accent); text-decoration: underline; }
-summary.mistake-question:focus-visible { color: var(--accent); text-decoration: underline; }
+/* スマホでは押したあとも色が残るので、カーソルのある端末だけにする */
 @media (hover: hover) {
   .mistake-list li:has(> .mistake-row:hover), .mistake-list li:has(summary:hover) { background: var(--row-hover); }
-  button.mistake-row:hover .mistake-question, summary.mistake-question:hover { color: var(--accent); text-decoration: underline; }
 }
 .mistake-row .mistake-meta { display: flex; }
 .mistake-row .mistake-question { display: block; }
