@@ -1,4 +1,4 @@
-import { authHeaders } from "./firebase";
+import { authHeaders, forgetGithubToken, hasGithubToken } from "./firebase";
 import type {
   Answer,
   Answers,
@@ -32,6 +32,18 @@ type RequestOptions = {
 
 async function request<T>(path: string, body?: unknown, signalOrOptions?: AbortSignal | RequestOptions): Promise<T> {
   const options: RequestOptions = signalOrOptions instanceof AbortSignal ? { signal: signalOrOptions } : (signalOrOptions ?? {});
+  try {
+    return await send<T>(path, body, options);
+  } catch (e) {
+    // GitHub のトークンが切れていた(8 時間で切れる)。捨てて、もう 1 回だけ送る。公開リポジトリはサーバーの
+    // トークンで読め、非公開リポジトリには「ログインし直す」の案内が出る
+    if (!(e instanceof ApiError) || e.code !== "github_token_expired" || !hasGithubToken()) throw e;
+    forgetGithubToken();
+    return send<T>(path, body, options);
+  }
+}
+
+async function send<T>(path: string, body: unknown, options: RequestOptions): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {

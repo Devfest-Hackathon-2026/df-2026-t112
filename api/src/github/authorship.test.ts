@@ -282,6 +282,15 @@ describe("fetchAuthoredSnapshot", () => {
   it("requires a token, because blame is only available through GraphQL", async () => {
     await expect(fetchAuthoredSnapshot("github.com/o/r", "alice", {})).rejects.toMatchObject({ code: "token_required" });
   });
+
+  it("reports a token that GraphQL refuses (expired after 8 hours) as unauthorized", async () => {
+    const { fetchImpl } = github({ ...base, blame: { "src/a.ts": [[1, 1, "alice"]] } });
+    const refusing = (async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith("/graphql") ? new Response("{}", { status: 401 }) : fetchImpl(input, init)) as typeof fetch;
+    await expect(fetchAuthoredSnapshot("github.com/o/r", "alice", { fetchImpl: refusing, token: "ghu_old" })).rejects.toMatchObject({
+      code: "unauthorized",
+    });
+  });
 });
 
 const authoredSnap: RepoSnapshot = {

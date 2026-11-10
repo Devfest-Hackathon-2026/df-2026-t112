@@ -37,6 +37,9 @@ type RepoMeta = { default_branch: string; description: string | null; private: b
 
 const API = "https://api.github.com";
 
+/** GitHub がトークンを受け付けなかった。ログインした人のトークンなら、期限切れ(8 時間)のことが多い。 */
+export const unauthorized = () => new RepoError("unauthorized", "GitHub の認証に失敗しました(トークンの期限切れなど)");
+
 export function githubClient(opts: FetchOptions) {
   const f = opts.fetchImpl ?? fetch;
   const headers: Record<string, string> = { "User-Agent": "evc-app", Accept: "application/vnd.github+json" };
@@ -46,6 +49,7 @@ export function githubClient(opts: FetchOptions) {
     const res = await f(`${API}${path}`, { headers });
     // 権限のない非公開リポジトリにも GitHub は 404 を返すので、ここでは「存在しない」と区別できない
     if (res.status === 404) throw new RepoError("not_found", "リポジトリが見つかりません(非公開の可能性もあります)");
+    if (res.status === 401) throw unauthorized();
     if (res.status === 403 || res.status === 429) {
       throw new RepoError("rate_limited", "GitHub API の制限に達しました。しばらくしてから再度お試しください");
     }
@@ -69,6 +73,7 @@ export function githubClient(opts: FetchOptions) {
           headers: { ...headers, Accept: "application/vnd.github.raw+json" },
         })
       : await f(`https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${encoded}`);
+    if (res.status === 401) throw unauthorized();
     if (!res.ok) throw new RepoError("upstream", `ファイル取得に失敗しました: ${path}`);
     return res.text();
   };

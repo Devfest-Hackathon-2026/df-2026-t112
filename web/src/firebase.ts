@@ -22,15 +22,32 @@ function setup(): Auth | null {
 /** Firebase の設定が無ければ null。そのときは開発用で、API も開発用のユーザーとして動く。 */
 export const firebaseAuth: Auth | null = setup();
 
-/** GitHub のアクセストークン。メモリにだけ置く(localStorage には保存しない)ので、リロードすると消える。 */
+/**
+ * GitHub のアクセストークン。メモリにだけ置く(localStorage には保存しない)ので、リロードすると消える。
+ * GitHub App のトークンは 8 時間で切れる。切れていたら、API の応答を見て捨てる(api.ts)。
+ */
 let githubToken: string | undefined;
+const tokenListeners = new Set<() => void>();
+
+function setGithubToken(token: string | undefined): void {
+  githubToken = token;
+  for (const listener of tokenListeners) listener();
+}
 
 export function rememberGithubToken(result: UserCredential): void {
-  githubToken = GithubAuthProvider.credentialFromResult(result)?.accessToken;
+  setGithubToken(GithubAuthProvider.credentialFromResult(result)?.accessToken);
 }
 
 export function forgetGithubToken(): void {
-  githubToken = undefined;
+  setGithubToken(undefined);
+}
+
+/** トークンを覚えたり捨てたりしたときに呼ぶ。返り値で解除する。 */
+export function onGithubTokenChange(listener: () => void): () => void {
+  tokenListeners.add(listener);
+  return () => {
+    tokenListeners.delete(listener);
+  };
 }
 
 export const hasGithubToken = (): boolean => githubToken !== undefined;

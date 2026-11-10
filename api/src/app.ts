@@ -62,6 +62,8 @@ const REPO_ERROR_STATUS = {
   upstream: 502,
   no_authored: 422,
   token_required: 503,
+  // サーバーの共有トークンが受け付けられなかった(ログインした人のトークンのときは、onError で別に返す)
+  unauthorized: 502,
 } as const;
 
 /** 規約のバージョンは、文面を変えた日(例:"2026-11-10")。 */
@@ -125,6 +127,10 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
 
   app.onError((err, c) => {
     if (err instanceof RepoError) {
+      // ログインした人の GitHub トークンが切れている(8 時間で切れる)。画面はトークンを捨てて、送り直す
+      if (err.code === "unauthorized" && c.get("githubToken")) {
+        return c.json({ error: "github_token_expired", message: "GitHub のログインの期限が切れました。ログインし直してください" }, 401);
+      }
       return c.json({ error: err.code, message: repoErrorMessage(err, deps.privateRepos) }, REPO_ERROR_STATUS[err.code]);
     }
     if (err instanceof LlmTimeoutError) {

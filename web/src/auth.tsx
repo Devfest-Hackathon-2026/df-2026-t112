@@ -2,7 +2,7 @@ import { GithubAuthProvider, onAuthStateChanged, reauthenticateWithPopup, signIn
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError, getMe, saveConsent } from "./api";
 import { statusFromMe, type AuthStatus } from "./authStatus";
-import { firebaseAuth, forgetGithubToken, hasGithubToken, rememberGithubToken } from "./firebase";
+import { firebaseAuth, forgetGithubToken, hasGithubToken, onGithubTokenChange, rememberGithubToken } from "./firebase";
 import { forgetQuiz } from "./persist";
 import { showQuizInUrl } from "./quizUrl";
 import { TERMS_VERSION } from "./components/Terms";
@@ -56,6 +56,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const consentAtLogin = useRef(false);
   // ログインし直したあとに、前の人の確認結果で上書きしないようにする
   const generation = useRef(0);
+
+  // 期限切れで GitHub のトークンを捨てたときも、画面(非公開リポジトリの案内)に反映する
+  useEffect(() => onGithubTokenChange(() => setTokenHeld(hasGithubToken())), []);
 
   useEffect(() => {
     /** 使ってよい人かどうかを API に確かめる。 */
