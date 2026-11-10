@@ -1,5 +1,15 @@
 import { authHeaders } from "./firebase";
-import type { Answers, GradeResult, QuizSession, RepoAuthor, MistakeAnswer, MistakeItem, ResolvedMistakeItem } from "./types";
+import type {
+  Answer,
+  Answers,
+  GradeResult,
+  QuizSession,
+  RepoAuthor,
+  MistakeAnswer,
+  MistakeItem,
+  ResolvedMistakeItem,
+  SavedQuiz,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -12,14 +22,24 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+type RequestOptions = {
+  signal?: AbortSignal;
+  /** 未指定なら、body が無ければ GET、あれば POST。 */
+  method?: "GET" | "POST" | "PUT";
+  /** ページを閉じても送り終える(回答の保存に使う)。 */
+  keepalive?: boolean;
+};
+
+async function request<T>(path: string, body?: unknown, signalOrOptions?: AbortSignal | RequestOptions): Promise<T> {
+  const options: RequestOptions = signalOrOptions instanceof AbortSignal ? { signal: signalOrOptions } : (signalOrOptions ?? {});
   let res: Response;
   try {
     res = await fetch(path, {
-      method: body === undefined ? "GET" : "POST",
+      method: options.method ?? (body === undefined ? "GET" : "POST"),
       headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(await authHeaders()) },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
+      signal: options.signal,
+      keepalive: options.keepalive,
     });
   } catch {
     throw new ApiError("network", "サーバーに接続できませんでした");
@@ -49,7 +69,12 @@ export const createQuiz = (url: string, author?: string) => request<QuizSession>
 
 export const retryQuiz = (sessionId: string) => request<QuizSession>(`/api/quiz/${sessionId}/retry`, {});
 
-export const getQuiz = (sessionId: string) => request<QuizSession>(`/api/quiz/${sessionId}`);
+/** 保存した回答と、採点済みなら結果も返る。再読み込みや別のタブで、続きから表示するのに使う。 */
+export const getQuiz = (sessionId: string) => request<SavedQuiz>(`/api/quiz/${sessionId}`);
+
+/** 1 問分の回答をサーバーに保存する。採点済みのクイズなら already_graded で失敗する。 */
+export const saveAnswer = (sessionId: string, questionId: string, answer: Answer) =>
+  request<null>(`/api/quiz/${sessionId}/answers/${encodeURIComponent(questionId)}`, answer, { method: "PUT", keepalive: true });
 
 export const gradeQuiz = (sessionId: string, answers: Answers) =>
   request<GradeResult>(`/api/quiz/${sessionId}/grade`, { answers });

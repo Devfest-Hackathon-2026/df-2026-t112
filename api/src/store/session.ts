@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { GradeResult } from "../grading/grade.js";
+import type { Answer } from "../grading/scoring.js";
 import type { AskedQuestion, Quiz } from "../quiz/types.js";
 
 export type Session = {
@@ -14,6 +15,11 @@ export type Session = {
   author?: string;
   /** 続けて解いているとき、このクイズより前に出した問題。 */
   asked?: AskedQuestion[];
+  /**
+   * 回答途中の状態(問題の id → 回答)。1 問ずつ保存するので、2 つのタブで答えても上書きし合わない(#32、#34 の D21)。
+   * 再読み込みや別の端末で、続きから解くために使う。
+   */
+  answers?: Record<string, Answer>;
   /** 採点済みなら結果。再採点で Gemini を呼び直さないために保存する。 */
   result?: GradeResult;
 };
@@ -23,6 +29,8 @@ export interface SessionStore {
   create(data: Omit<Session, "id" | "createdAt">): Promise<Session>;
   get(id: string): Promise<Session | undefined>;
   saveResult(id: string, result: GradeResult): Promise<void>;
+  /** 1 問分の回答を保存する。ほかの問題の回答には触れない。 */
+  saveAnswer(id: string, questionId: string, answer: Answer): Promise<void>;
   /** ユーザーの採点済みセッションの結果(新しい順、最大 limit 件)。苦手分析に使う。 */
   listResultsByUid(uid: string, limit: number): Promise<GradeResult[]>;
 }
@@ -56,6 +64,11 @@ export class MemorySessionStore implements SessionStore {
   async saveResult(id: string, result: GradeResult): Promise<void> {
     const s = await this.get(id);
     if (s) s.result = result;
+  }
+
+  async saveAnswer(id: string, questionId: string, answer: Answer): Promise<void> {
+    const s = await this.get(id);
+    if (s) s.answers = { ...s.answers, [questionId]: answer };
   }
 
   async listResultsByUid(uid: string, limit: number): Promise<GradeResult[]> {
