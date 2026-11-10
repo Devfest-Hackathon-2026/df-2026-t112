@@ -1,3 +1,5 @@
+import type { RepoAuthor } from "./types";
+
 /**
  * EVC(GitHub App)にリポジトリを読ませるために開く GitHub の画面(API が調べて返す)。
  * - install: 持ち主のアカウントに、まだ EVC が入っていない
@@ -53,4 +55,9 @@ export function repoHint(
 /** 打ち込み途中に問い合わせないよう待つ時間。貼り付けのときは待たない。 */
 export function checkDelay(pasted: boolean): number {
   return pasted ? 0 : 500;
+}
+
+/** コミットした人の中から、ログイン中の本人を探す。名前は変えられるので GitHub の数字の ID で比べる。 */
+export function findMe(authors: RepoAuthor[], githubId: string | undefined): RepoAuthor | undefined {
+  return githubId === undefined ? undefined : authors.find((a) => a.githubId === githubId);
 }

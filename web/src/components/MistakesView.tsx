@@ -8,12 +8,12 @@ const messageOf = (e: unknown) => (e instanceof ApiError ? e.message : "予期�
 
 type Folder = { open: MistakeItem[]; resolved: ResolvedMistakeItem[] };
 
-/** 間違えた問題のフォルダ。未解決と解決済みを分けて見せ、未解決の問題を復習できる。 */
+/** 間違えた問題のフォルダ。未解決と解決済みを分けて見せ、解く問題を自分で選べる。 */
 export function MistakesView({ onBack }: { onBack: () => void }) {
   const [folder, setFolder] = useState<Folder | null>(null);
   const [tab, setTab] = useState<"open" | "resolved">("open");
   /** 解いている問題。again は解決済みの問題の解き直し。 */
-  const [reviewing, setReviewing] = useState<{ items: MistakeItem[]; again: boolean } | null>(null);
+  const [solving, setSolving] = useState<{ item: MistakeItem; again: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -25,13 +25,13 @@ export function MistakesView({ onBack }: { onBack: () => void }) {
 
   useEffect(load, [load]);
 
-  if (reviewing) {
+  if (solving) {
     return (
       <MistakeReview
-        items={reviewing.items}
-        again={reviewing.again}
+        item={solving.item}
+        again={solving.again}
         onDone={() => {
-          setReviewing(null);
+          setSolving(null);
           load();
         }}
       />
@@ -73,26 +73,24 @@ export function MistakesView({ onBack }: { onBack: () => void }) {
           {folder.open.length === 0 ? (
             <p className="muted mistake-empty">未解決の問題はありません。</p>
           ) : (
-            <>
-              <button className="primary" onClick={() => setReviewing({ items: folder.open, again: false })}>
-                未解決の問題を復習する({folder.open.length} 問)
-              </button>
-              <ul className="mistake-list">
-                {folder.open.map((m) => (
-                  <li key={m.id}>
-                    <p className="mistake-meta">
-                      <span className="status open">未解決</span>
-                      <span className="muted">
-                        {m.repo.owner}/{m.repo.name} ・ {m.wrongCount} 回間違えた
-                      </span>
-                    </p>
-                    <p className="mistake-question">
-                      <RichText text={m.reviewQuestion} />
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </>
+            <ul className="mistake-list">
+              {folder.open.map((m) => (
+                <li key={m.id}>
+                  <p className="mistake-meta">
+                    <span className="status open">未解決</span>
+                    <span className="muted">
+                      {m.repo.owner}/{m.repo.name} ・ {m.wrongCount} 回間違えた
+                    </span>
+                    <button type="button" className="link mistake-again" onClick={() => setSolving({ item: m, again: false })}>
+                      解く
+                    </button>
+                  </p>
+                  <p className="mistake-question">
+                    <RichText text={m.reviewQuestion} />
+                  </p>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       ) : (
@@ -101,82 +99,62 @@ export function MistakesView({ onBack }: { onBack: () => void }) {
             <p className="muted mistake-empty">解決済みの問題はまだありません。</p>
           ) : (
             <>
-            <button className="primary" onClick={() => setReviewing({ items: folder.resolved, again: true })}>
-              解決済みの問題をすべて解き直す({folder.resolved.length} 問)
-            </button>
-            <p className="muted mistake-note">解き直して 0.7 点に届かなかった問題は、未解決に戻ります。</p>
-            <ul className="mistake-list">
-              {folder.resolved.map((m) => (
-                <li key={m.id}>
-                  <p className="mistake-meta">
-                    <span className="status resolved">解決済み</span>
-                    <span className="muted">
-                      {m.repo.owner}/{m.repo.name} ・ {new Date(m.resolvedAt).toLocaleDateString("ja-JP")}
-                    </span>
-                    <button type="button" className="link mistake-again" onClick={() => setReviewing({ items: [m], again: true })}>
-                      もう一度解く
-                    </button>
-                  </p>
-                  <details>
-                    <summary className="mistake-question">
-                      <RichText text={m.reviewQuestion} />
-                    </summary>
-                    <div className="mistake-detail">
-                      {m.snippet && <CodeBlock code={m.snippet} startLine={m.codeRef.startLine} />}
-                      <h3>満たすべき要点</h3>
-                      <p className="pre-wrap">
-                        <RichText text={m.rubric} />
-                      </p>
-                      <h3>解説</h3>
-                      <p>
-                        <RichText text={m.explanation} />
-                      </p>
-                    </div>
-                  </details>
-                </li>
-              ))}
-            </ul>
+              <p className="muted mistake-note">解き直して 0.7 点に届かなかった問題は、未解決に戻ります。</p>
+              <ul className="mistake-list">
+                {folder.resolved.map((m) => (
+                  <li key={m.id}>
+                    <p className="mistake-meta">
+                      <span className="status resolved">解決済み</span>
+                      <span className="muted">
+                        {m.repo.owner}/{m.repo.name} ・ {new Date(m.resolvedAt).toLocaleDateString("ja-JP")}
+                      </span>
+                      <button type="button" className="link mistake-again" onClick={() => setSolving({ item: m, again: true })}>
+                        もう一度解く
+                      </button>
+                    </p>
+                    <details>
+                      <summary className="mistake-question">
+                        <RichText text={m.reviewQuestion} />
+                      </summary>
+                      <div className="mistake-detail">
+                        {m.snippet && <CodeBlock code={m.snippet} startLine={m.codeRef.startLine} />}
+                        <h3>満たすべき要点</h3>
+                        <p className="pre-wrap">
+                          <RichText text={m.rubric} />
+                        </p>
+                        <h3>解説</h3>
+                        <p>
+                          <RichText text={m.explanation} />
+                        </p>
+                      </div>
+                    </details>
+                  </li>
+                ))}
+              </ul>
             </>
           )}
         </section>
       )}
 
       <button className="secondary block mistake-back" onClick={onBack}>
-        トップに戻る
+        戻る
       </button>
     </div>
   );
 }
 
-/** 問題を、1 問ずつ自分の言葉で説明して復習する。 */
-function MistakeReview({ items, again, onDone }: { items: MistakeItem[]; again: boolean; onDone: () => void }) {
-  const [index, setIndex] = useState(0);
+/** 選んだ問題を、自分の言葉で説明して採点する。 */
+function MistakeReview({ item, again, onDone }: { item: MistakeItem; again: boolean; onDone: () => void }) {
   const [text, setText] = useState("");
   const [result, setResult] = useState<MistakeAnswer | null>(null);
-  const [resolved, setResolved] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const item = items[index];
-  if (!item) {
-    return (
-      <div className="loading">
-        <h2>復習が終わりました</h2>
-        <p className="muted">
-          {items.length} 問中 {resolved} 問を{again ? "正解しました" : "解決しました"}
-        </p>
-        <button onClick={onDone}>フォルダに戻る</button>
-      </div>
-    );
-  }
 
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      const answer = await answerMistake(item.id, text);
-      setResult(answer);
-      if (answer.correct) setResolved((n) => n + 1);
+      setResult(await answerMistake(item.id, text));
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -184,22 +162,11 @@ function MistakeReview({ items, again, onDone }: { items: MistakeItem[]; again: 
     }
   };
 
-  const next = () => {
-    setIndex((i) => i + 1);
-    setText("");
-    setResult(null);
-    setError(null);
-    window.scrollTo({ top: 0 });
-  };
-
   return (
     <div className="quiz">
       <div className="quiz-top">
         <span className="muted quiz-repo">
           間違えた問題の復習 ・ {item.repo.owner}/{item.repo.name}
-        </span>
-        <span className="quiz-count">
-          {index + 1} / {items.length}
         </span>
       </div>
 
@@ -253,18 +220,23 @@ function MistakeReview({ items, again, onDone }: { items: MistakeItem[]; again: 
       <footer className="quiz-nav">
         {error && <p className="error" role="alert">{error}</p>}
         <div className="quiz-nav-row">
-          <button type="button" className="secondary" onClick={onDone}>
-            やめる
-          </button>
-          <span className="quiz-keys" />
           {result ? (
-            <button type="button" onClick={next}>
-              {index + 1 < items.length ? "次の問題へ" : "終わる"}
-            </button>
+            <>
+              <span className="quiz-keys" />
+              <button type="button" onClick={onDone}>
+                フォルダに戻る
+              </button>
+            </>
           ) : (
-            <button type="button" disabled={busy || !text.trim()} onClick={submit}>
-              {busy ? "採点中…" : "採点する"}
-            </button>
+            <>
+              <button type="button" className="secondary" onClick={onDone}>
+                やめる
+              </button>
+              <span className="quiz-keys" />
+              <button type="button" disabled={busy || !text.trim()} onClick={submit}>
+                {busy ? "採点中…" : "採点する"}
+              </button>
+            </>
           )}
         </div>
       </footer>

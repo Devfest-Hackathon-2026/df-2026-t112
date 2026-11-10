@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, createQuiz, getQuiz, gradeQuiz, listMistakes, retryQuiz } from "./api";
-import { AuthButton } from "./components/AuthButton";
+import { AccountMenu } from "./components/AccountMenu";
 import { MistakesView } from "./components/MistakesView";
 import { QuizView } from "./components/QuizView";
 import { RepoForm } from "./components/RepoForm";
@@ -9,9 +9,11 @@ import { Wordmark } from "./components/Wordmark";
 import { clearProgress, loadProgress, saveProgress } from "./persist";
 import type { Answers, GradeResult, QuizSession } from "./types";
 
-type Phase =
+/** 間違えた問題フォルダは、どの画面からでも開いて、元の画面に戻れる。 */
+type Phase = BasePhase | { name: "mistakes"; back: BasePhase };
+
+type BasePhase =
   | { name: "input" }
-  | { name: "mistakes" }
   | { name: "loading"; url: string; message?: string }
   | { name: "quiz"; session: QuizSession; submitting: boolean }
   | { name: "result"; session: QuizSession; result: GradeResult };
@@ -30,15 +32,14 @@ export function App() {
   );
   const [answers, setAnswers] = useState<Answers>(saved?.answers ?? {});
   const [error, setError] = useState<string | null>(null);
-  const [mistakeCounts, setMistakeCounts] = useState({ open: 0, resolved: 0 });
+  const [openMistakes, setOpenMistakes] = useState(0);
 
-  // トップ画面に戻るたびに、問題の数を取り直す。取得に失敗しても、クイズは作れる
+  // 画面が変わるたびに、未解決の数を取り直す。取得に失敗しても、クイズは作れる
   useEffect(() => {
-    if (phase.name !== "input") return;
     let active = true;
     listMistakes()
       .then((r) => {
-        if (active) setMistakeCounts({ open: r.open.length, resolved: r.resolved.length });
+        if (active) setOpenMistakes(r.open.length);
       })
       .catch(() => {});
     return () => {
@@ -66,7 +67,7 @@ export function App() {
   };
 
   /** クイズを作って開く。失敗したら onFail の画面に戻す(前の結果を消さないよう、保存は成功してから上書きする)。 */
-  const openQuiz = async (create: () => Promise<QuizSession>, loading: Phase, onFail: Phase) => {
+  const openQuiz = async (create: () => Promise<QuizSession>, loading: BasePhase, onFail: BasePhase) => {
     setError(null);
     setPhase(loading);
     try {
@@ -82,8 +83,12 @@ export function App() {
 
   const start = (url: string, author?: string) =>
     openQuiz(
-      () => createQuiz(url, author),
-      { name: "loading", url, message: author ? `${author} が書いたコードから問題を作っています…` : undefined },
+      // 本人の行が見つからなかったら、全体から出題する
+      () => createQuiz(url, author).catch((e) => {
+        if (author && e instanceof ApiError && e.code === "no_authored") return createQuiz(url);
+        throw e;
+      }),
+      { name: "loading", url, message: author ? "あなたが書いたコードから問題を作っています…" : undefined },
       { name: "input" },
     );
 
@@ -124,24 +129,27 @@ export function App() {
             <span className="muted">Escape VibeCoder</span>
           </>
         )}
-        <AuthButton />
+        <div className="app-actions">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`間違えた問題フォルダ(未解決 ${openMistakes} 問)`}
+            title="間違えた問題フォルダ"
+            disabled={phase.name === "loading" || (phase.name === "quiz" && phase.submitting)}
+            onClick={() => setPhase((p) => (p.name === "mistakes" ? p : { name: "mistakes", back: p }))}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" />
+            </svg>
+            {openMistakes > 0 && <span className="icon-badge">{openMistakes}</span>}
+          </button>
+          <AccountMenu />
+        </div>
       </header>
 
       <main className={phase.name === "quiz" || phase.name === "mistakes" ? "wide" : undefined}>
-      {phase.name === "input" && (
-        <RepoForm
-          onSubmit={start}
-          error={error}
-          footer={
-            mistakeCounts.open + mistakeCounts.resolved > 0 && (
-              <button type="button" className="link mistake-entry" onClick={() => setPhase({ name: "mistakes" })}>
-                間違えた問題フォルダ(未解決 {mistakeCounts.open} 問)
-              </button>
-            )
-          }
-        />
-      )}
-      {phase.name === "mistakes" && <MistakesView onBack={() => setPhase({ name: "input" })} />}
+      {phase.name === "input" && <RepoForm onSubmit={start} error={error} />}
+      {phase.name === "mistakes" && <MistakesView onBack={() => setPhase(phase.back)} />}
       {phase.name === "loading" && (
         <div className="loading" aria-live="polite">
           <div className="spinner" />

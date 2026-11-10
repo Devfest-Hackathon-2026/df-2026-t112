@@ -83,8 +83,8 @@ const app = createApp({
   auth: authFromEnv(),
   fetchSnapshot: async () => snapshot,
   listAuthors: async () => [
-    { login: "mock-user", commits: 12 },
-    { login: "another-user", commits: 3 },
+    { login: "mock-user", githubId: "1", commits: 12 },
+    { login: "another-user", githubId: "2", commits: 3 },
   ],
   fetchAuthoredSnapshot: async () => ({ ...snapshot, authored: { "src/add.ts": [{ start: 1, end: 6 }] } }),
   // URL に configured を含めると、すでに EVC を入れたアカウントの案内(設定の画面)を試せる

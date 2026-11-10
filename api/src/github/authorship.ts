@@ -3,7 +3,7 @@ import { isSourceFile, isTestPath, priority, testQuota, type RepoSize, type Tree
 import { githubClient, type FetchOptions, type LineRange, type RepoSnapshot } from "./snapshot.js";
 import { RepoError, parseRepoUrl } from "./url.js";
 
-export type RepoAuthor = { login: string; commits: number };
+export type RepoAuthor = { login: string; githubId: string; commits: number };
 
 /** GitHub API の呼び出しが増えすぎないよう、見るコミットと行単位で調べるファイルを絞る。 */
 const MAX_COMMITS = 30;
@@ -43,10 +43,10 @@ export async function listAuthors(urlInput: string, opts: FetchOptions = {}): Pr
   const { owner, repo } = parseRepoUrl(urlInput);
   const client = githubClient(opts);
   await client.getMeta(owner, repo);
-  const contributors = await client.getJson<{ login?: string; type?: string; contributions: number }[]>(
+  const contributors = await client.getJson<{ login?: string; id?: number; type?: string; contributions: number }[]>(
     `/repos/${owner}/${repo}/contributors?per_page=100`,
   );
-  return contributors.flatMap((c) => (c.login && c.type === "User" ? [{ login: c.login, commits: c.contributions }] : []));
+  return contributors.flatMap((c) => (c.login && c.type === "User" ? [{ login: c.login, githubId: String(c.id), commits: c.contributions }] : []));
 }
 
 type BlameRange = { startingLine: number; endingLine: number; commit: { author: { user: { login: string } | null } | null } };

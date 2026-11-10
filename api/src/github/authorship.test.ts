@@ -135,11 +135,11 @@ describe("listAuthors", () => {
   it("lists people, not bots", async () => {
     const { fetchImpl } = github({
       contributors: [
-        { login: "alice", type: "User", contributions: 9 },
+        { login: "alice", id: 42, type: "User", contributions: 9 },
         { login: "dependabot[bot]", type: "Bot", contributions: 50 },
       ],
     });
-    expect(await listAuthors("github.com/o/r", { fetchImpl })).toEqual([{ login: "alice", commits: 9 }]);
+    expect(await listAuthors("github.com/o/r", { fetchImpl })).toEqual([{ login: "alice", githubId: "42", commits: 9 }]);
   });
 });
 
@@ -374,7 +374,7 @@ describe("API for an author's quiz", () => {
         authoredCalls.push([url, login]);
         return authoredSnap;
       },
-      listAuthors: async () => [{ login: "alice", commits: 3 }],
+      listAuthors: async () => [{ login: "alice", githubId: "1", commits: 3 }],
     });
     const post = (path: string, body: unknown = {}) =>
       app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -383,7 +383,7 @@ describe("API for an author's quiz", () => {
 
   it("lists the authors", async () => {
     const res = await setup().post("/api/repo/authors", { url: "github.com/o/r" });
-    expect(await res.json()).toEqual({ authors: [{ login: "alice", commits: 3 }] });
+    expect(await res.json()).toEqual({ authors: [{ login: "alice", githubId: "1", commits: 3 }] });
   });
 
   it("uses the author's code when one is chosen, and remembers them", async () => {
