@@ -7,12 +7,14 @@ import { fetchAuthoredSnapshot, findLogin, requireOwnCommits } from "./github/au
 import { RepoError } from "./github/url.js";
 import { LlmError, LlmTimeoutError, REQUEST_BUDGET_MS, createGeminiClient, type LlmClient } from "./llm/client.js";
 import { gradeQuiz } from "./grading/grade.js";
+import { MAX_ANSWER_CHARS } from "./grading/review.js";
 import type { Answer } from "./grading/scoring.js";
 import { analyzeWeakness } from "./grading/weakness.js";
 import { generateQuiz, generateSimilarQuiz } from "./quiz/generate.js";
 import { snippetsFor, toPublicQuestions } from "./quiz/public.js";
 import { PROFILES, fixedProfileFromEnv, profileForSize, type Profile } from "./quiz/profile.js";
 import { collectAsked, missedQuestions } from "./quiz/retry.js";
+import type { Question } from "./quiz/types.js";
 import { rateLimit } from "./rateLimit.js";
 import { registerMistakeRoutes } from "./mistakes.js";
 import { MemoryMistakeStore, type MistakeStore } from "./store/mistakes.js";
@@ -202,6 +204,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     return c.json({ sessionId: session.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });
   });
 
+  // 再読み込みや別のタブ・端末で開いたときに、保存した回答と採点結果も返して、続きから表示できるようにする
   app.get("/api/quiz/:id", async (c) => {
     const session = await findSession(c.req.param("id"), c.get("user"));
     if (!session) return c.json({ error: "not_found", message: "セッションが見つかりません" }, 404);
@@ -209,7 +212,23 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
       sessionId: session.id,
       repo: session.quiz.repo,
       questions: toPublicQuestions(session.quiz, session.snippets),
+      answers: session.answers ?? {},
+      result: session.result ?? null,
     });
+  });
+
+  // 1 問答えるたびに呼ばれる。1 問ずつ保存するので、2 つのタブで答えても上書きし合わない(#32)
+  const saving = perUser(Number(process.env.ANSWER_SAVE_PER_HOUR ?? 1200));
+  app.put("/api/quiz/:id/answers/:questionId", saving, async (c) => {
+    const session = await findSession(c.req.param("id"), c.get("user"));
+    if (!session) return c.json({ error: "not_found", message: "セッションが見つかりません" }, 404);
+    if (session.result) return c.json({ error: "already_graded", message: "このクイズは採点済みです" }, 409);
+    const question = session.quiz.questions.find((q) => q.id === c.req.param("questionId"));
+    if (!question) return c.json({ error: "not_found", message: "問題が見つかりません" }, 404);
+    const answer = sanitizeAnswer(await c.req.json<unknown>().catch(() => null), question);
+    if (!answer) return c.json({ error: "invalid_answer", message: "回答の形式が正しくありません" }, 400);
+    await deps.store.saveAnswer(session.id, question.id, answer);
+    return c.body(null, 204);
   });
 
   app.post("/api/quiz/:id/grade", async (c) => {
@@ -218,7 +237,8 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     if (session.result) return c.json(session.result);
 
     const body = await c.req.json<{ answers?: unknown }>().catch(() => ({}) as { answers?: unknown });
-    const answers = sanitizeAnswers(body.answers);
+    // 古い画面のタブから提出しても、別のタブで答えた分が消えないように、サーバーに保存した回答と合わせる
+    const answers = mergeAnswers(session.answers, sanitizeAnswers(body.answers));
     const { mistakes, ...result } = await gradeQuiz(session.quiz, session.snippets, answers, getLlm(), Date.now() + REQUEST_BUDGET_MS);
     // 保存に失敗しても、採点結果は返す
     await deps.mistakes
@@ -267,6 +287,30 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
   });
 
   return app;
+}
+
+/** 1 問分の回答を、その問題の形に合わせて確かめる。合わなければ undefined。 */
+function sanitizeAnswer(input: unknown, question: Pick<Question, "type" | "choices">): Answer | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const { choice, text } = input as { choice?: unknown; text?: unknown };
+  if (question.type === "choice") {
+    return Number.isInteger(choice) && (choice as number) >= 0 && (choice as number) < question.choices.length
+      ? { choice: choice as number }
+      : undefined;
+  }
+  return typeof text === "string" ? { text: text.slice(0, MAX_ANSWER_CHARS) } : undefined;
+}
+
+/**
+ * サーバーに保存した回答に、提出された回答を重ねる(提出された方を優先する)。
+ * 提出に無い問題や、中身の無い回答では、保存した回答を消さない。
+ */
+export function mergeAnswers(saved: Record<string, Answer> = {}, submitted: Record<string, Answer>): Record<string, Answer> {
+  const out = { ...saved };
+  for (const [id, a] of Object.entries(submitted)) {
+    if (a.choice !== undefined || (a.text !== undefined && a.text.trim() !== "")) out[id] = a;
+  }
+  return out;
 }
 
 function sanitizeAnswers(input: unknown): Record<string, Answer> {

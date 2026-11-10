@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { getApps, initializeApp } from "firebase-admin/app";
-import { FieldValue, Timestamp, getFirestore, type Firestore } from "firebase-admin/firestore";
+import { FieldPath, FieldValue, Timestamp, getFirestore, type Firestore } from "firebase-admin/firestore";
 import type { GradeResult } from "../grading/grade.js";
+import type { Answer } from "../grading/scoring.js";
 import { CATEGORIES } from "../quiz/types.js";
 import { byRecent, newMistake, type Mistake, type MistakeDraft, type MistakeStore } from "./mistakes.js";
 import type { Session, SessionStore } from "./session.js";
@@ -29,8 +30,27 @@ export function serializeSession(s: Session) {
     snippets: JSON.stringify(s.snippets),
     author: s.author ?? null,
     asked: s.asked ? JSON.stringify(s.asked) : null,
+    // 回答は 1 問ずつ書き換えるので、JSON 文字列ではなくマップで持つ(saveAnswer)
+    answers: Object.fromEntries(Object.entries(s.answers ?? {}).map(([id, a]) => [id, cleanAnswer(a)])),
     result: s.result ? JSON.stringify(s.result) : null,
   };
+}
+
+/** Firestore は undefined を保存できないので、値のある項目だけにする。 */
+function cleanAnswer(a: Answer): Answer {
+  return { ...(a.choice !== undefined ? { choice: a.choice } : {}), ...(a.text !== undefined ? { text: a.text } : {}) };
+}
+
+function readAnswers(v: unknown): Record<string, Answer> | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
+  const out: Record<string, Answer> = {};
+  for (const [id, a] of Object.entries(v as Record<string, { choice?: unknown; text?: unknown }>)) {
+    out[id] = cleanAnswer({
+      choice: typeof a?.choice === "number" ? a.choice : undefined,
+      text: typeof a?.text === "string" ? a.text : undefined,
+    });
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export function deserializeSession(id: string, d: Record<string, unknown>): Session {
@@ -42,6 +62,7 @@ export function deserializeSession(id: string, d: Record<string, unknown>): Sess
     snippets: JSON.parse(String(d.snippets)),
     author: typeof d.author === "string" ? d.author : undefined,
     asked: typeof d.asked === "string" ? JSON.parse(d.asked) : undefined,
+    answers: readAnswers(d.answers),
     result: typeof d.result === "string" ? JSON.parse(d.result) : undefined,
   };
 }
@@ -84,6 +105,11 @@ export class FirestoreSessionStore implements SessionStore {
         categories: result.categories,
         gradedAt: Date.now(),
       });
+  }
+
+  async saveAnswer(id: string, questionId: string, answer: Answer): Promise<void> {
+    // その問題の項目だけを書き換える。2 つのタブで別々の問題に答えても、互いに消さない
+    await this.col().doc(id).update(new FieldPath("answers", questionId), cleanAnswer(answer));
   }
 }
 

@@ -1,79 +1,69 @@
 import { describe, expect, it } from "vitest";
-import { RETENTION_MS, clearProgress, loadProgress, saveProgress, type Saved } from "./persist";
+import { RETENTION_MS, forgetQuiz, lastQuiz, rememberQuiz } from "./persist";
 
-function memoryStorage(initial: Record<string, string> = {}) {
-  const data = new Map(Object.entries(initial));
+function memoryStorage() {
+  const data = new Map<string, string>();
   return {
+    data,
     getItem: (k: string) => data.get(k) ?? null,
     setItem: (k: string, v: string) => void data.set(k, v),
     removeItem: (k: string) => void data.delete(k),
   };
 }
 
-const saved: Saved = {
-  session: {
-    sessionId: "s1",
-    repo: { owner: "o", repo: "r", branch: "main", description: null },
-    questions: [],
-  },
-  answers: { q1: { choice: 2 }, q2: { text: "説明" } },
-};
-
-describe("progress persistence", () => {
-  it("round-trips progress", () => {
+describe("last quiz", () => {
+  it("remembers only the quiz id, per signed-in user", () => {
     const storage = memoryStorage();
-    saveProgress(saved, storage);
-    expect(loadProgress(storage)).toEqual(saved);
+    rememberQuiz("alice", "s1", storage, 1000);
+    expect(lastQuiz("alice", storage, 2000)).toBe("s1");
+    // 別の人には返さない(共有の端末で、次の人が前の人のクイズを開こうとしない)
+    expect(lastQuiz("bob", storage, 2000)).toBeNull();
+    // クイズの中身や回答は入れない
+    expect([...storage.data.values()].join()).not.toContain("question");
   });
 
-  it("returns null when nothing is saved", () => {
-    expect(loadProgress(memoryStorage())).toBeNull();
-  });
-
-  it("ignores corrupted or unexpected data instead of throwing", () => {
-    expect(loadProgress(memoryStorage({ "evc:progress": "{not json" }))).toBeNull();
-    expect(loadProgress(memoryStorage({ "evc:progress": JSON.stringify({ session: {} }) }))).toBeNull();
-    expect(loadProgress(memoryStorage({ "evc:progress": "null" }))).toBeNull();
-  });
-
-  it("restores progress until the retention period ends, then discards it", () => {
+  it("forgets it after the server's retention period", () => {
     const storage = memoryStorage();
-    saveProgress(saved, storage, 1000);
-    expect(loadProgress(storage, 1000 + RETENTION_MS - 1)).toEqual(saved);
-    expect(loadProgress(storage, 1000 + RETENTION_MS)).toBeNull();
-    expect(storage.getItem("evc:progress")).toBeNull();
+    rememberQuiz("alice", "s1", storage, 0);
+    expect(lastQuiz("alice", storage, RETENTION_MS - 1)).toBe("s1");
+    expect(lastQuiz("alice", storage, RETENTION_MS)).toBeNull();
   });
 
-  it("extends the retention period each time progress is saved", () => {
+  it("forgets it on request (logout or starting over)", () => {
     const storage = memoryStorage();
-    saveProgress(saved, storage, 1000);
-    saveProgress(saved, storage, 1000 + RETENTION_MS - 1);
-    expect(loadProgress(storage, 1000 + RETENTION_MS + 1)).toEqual(saved);
+    rememberQuiz("alice", "s1", storage);
+    forgetQuiz(storage);
+    expect(lastQuiz("alice", storage)).toBeNull();
   });
 
-  it("clears saved progress", () => {
+  it("removes the old saved quiz that held questions and answers", () => {
     const storage = memoryStorage();
-    saveProgress(saved, storage);
-    clearProgress(storage);
-    expect(loadProgress(storage)).toBeNull();
+    storage.setItem("evc:progress", JSON.stringify({ session: { sessionId: "old", questions: [] }, answers: {}, savedAt: 1 }));
+    expect(lastQuiz("alice", storage)).toBeNull();
+    expect(storage.data.has("evc:progress")).toBe(false);
   });
 
-  it("keeps working when storage is unavailable or throws", () => {
-    const throwing = {
+  it("ignores corrupted data and keeps working when storage is unavailable or throws", () => {
+    const storage = memoryStorage();
+    storage.setItem("evc:last-quiz", "{not json");
+    expect(lastQuiz("alice", storage)).toBeNull();
+    storage.setItem("evc:last-quiz", JSON.stringify({ uid: "alice" }));
+    expect(lastQuiz("alice", storage)).toBeNull();
+
+    expect(lastQuiz("alice", null)).toBeNull();
+    const broken = {
       getItem: () => {
-        throw new Error("blocked");
+        throw new Error("denied");
       },
       setItem: () => {
-        throw new Error("quota");
+        throw new Error("denied");
       },
       removeItem: () => {
-        throw new Error("blocked");
+        throw new Error("denied");
       },
     };
-    expect(() => saveProgress(saved, throwing)).not.toThrow();
-    expect(loadProgress(throwing)).toBeNull();
-    expect(() => clearProgress(throwing)).not.toThrow();
-    expect(loadProgress(null)).toBeNull();
-    expect(() => saveProgress(saved, null)).not.toThrow();
+    expect(() => rememberQuiz("alice", "s1", broken)).not.toThrow();
+    expect(lastQuiz("alice", broken)).toBeNull();
+    expect(() => forgetQuiz(broken)).not.toThrow();
   });
 });

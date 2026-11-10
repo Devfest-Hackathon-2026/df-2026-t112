@@ -3,7 +3,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { ApiError, getMe } from "./api";
 import { statusFromMe, type AuthStatus } from "./authStatus";
 import { firebaseAuth, forgetGithubToken, hasGithubToken, rememberGithubToken } from "./firebase";
-import { clearProgress } from "./persist";
+import { forgetQuiz } from "./persist";
+import { showQuizInUrl } from "./quizUrl";
 
 type AuthState = {
   status: AuthStatus;
@@ -87,8 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout: async () => {
         forgetGithubToken();
         setTokenHeld(false);
-        // 共有の端末で、次の人に前の人のクイズが見えないようにする
-        clearProgress();
+        // 共有の端末で、次の人が前の人のクイズを開こうとしないようにする(中身はサーバーにあり、本人にしか返さない)
+        forgetQuiz();
+        showQuizInUrl(null);
         if (firebaseAuth) await signOut(firebaseAuth);
       },
       hasGithubToken: tokenHeld,

@@ -8,10 +8,12 @@ type Props = {
   submitting: boolean;
   error?: string | null;
   onSubmit: (answers: Answers) => void;
-  /** 再読み込み後に、入力済みの回答を復元するための初期値。 */
-  initialAnswers?: Answers;
-  /** 回答が変わるたびに呼ばれる(進行状況の保存に使う)。 */
-  onAnswersChange?: (answers: Answers) => void;
+  /**
+   * 今の回答。持ち主(App)が持つので、別のタブで答えた分をサーバーから読み直したときも、ここに反映される(#32)。
+   */
+  answers: Answers;
+  /** 回答が変わるたびに呼ばれる(サーバーへの保存に使う)。 */
+  onAnswersChange: (answers: Answers) => void;
 };
 
 /** 文字入力中は、矢印キーや数字キーを入力の操作として扱う。 */
@@ -19,10 +21,10 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
 }
 
-export function QuizView({ session, submitting, error, onSubmit, initialAnswers, onAnswersChange }: Props) {
+export function QuizView({ session, submitting, error, onSubmit, answers, onAnswersChange }: Props) {
   const { questions } = session;
-  const [answers, setAnswers] = useState<Answers>(initialAnswers ?? {});
-  const [index, setIndex] = useState(() => startIndex(questions, initialAnswers ?? {}));
+  // 開いたときは、最初の未回答の問題から始める
+  const [index, setIndex] = useState(() => startIndex(questions, answers));
   const [direction, setDirection] = useState<"next" | "prev" | null>(null);
   const frame = useRef<HTMLDivElement>(null);
 
@@ -38,11 +40,7 @@ export function QuizView({ session, submitting, error, onSubmit, initialAnswers,
     setIndex(to);
   };
 
-  const answer = (a: Answer) => {
-    const next = { ...answers, [q.id]: a };
-    setAnswers(next);
-    onAnswersChange?.(next);
-  };
+  const answer = (a: Answer) => onAnswersChange({ ...answers, [q.id]: a });
 
   // 問題を切り替えたら先頭に戻し、読み上げソフトにも新しい問題を伝える。初回は何もしない
   useEffect(() => {

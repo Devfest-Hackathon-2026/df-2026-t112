@@ -18,6 +18,9 @@ export type QuizSession = { sessionId: string; repo: RepoInfo; questions: Public
 export type Answer = { choice?: number; text?: string };
 export type Answers = Record<string, Answer>;
 
+/** サーバーから読み直したクイズ。回答途中の状態と、採点済みなら結果も入っている(#32)。 */
+export type SavedQuiz = QuizSession & { answers: Answers; result: GradeResult | null };
+
 export type QuestionResult = {
   id: string;
   category: string;
