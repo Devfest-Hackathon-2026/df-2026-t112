@@ -1,6 +1,5 @@
 import { Hono } from "hono";
-import { accessCheck, accessPassword } from "./accessPassword.js";
-import { authMiddleware, type AuthUser, type AuthVariables, type Authenticator } from "./auth.js";
+import { parseAllowlist, requireUser, type Allowlist, type AuthUser, type AuthVariables, type Authenticator } from "./auth.js";
 import type { RepoSize } from "./github/filter.js";
 import { checkRepo, fetchRepoSnapshot, type RepoCheck, type RepoSnapshot } from "./github/snapshot.js";
 import {
@@ -35,12 +34,12 @@ export type Deps = {
   fetchAuthoredSnapshot: (url: string, login: string, userToken?: string) => Promise<RepoSnapshot>;
   /** 入力欄の即時チェック用。リポジトリを読めるかどうかだけを確かめる。 */
   checkRepo: (url: string, userToken?: string) => Promise<RepoCheck>;
-  /** 未指定なら認証なし(匿名のみ)。 */
+  /** 未指定なら開発用で、すべてのリクエストを DEV_USER として扱う。Cloud Run では必ず指定する。 */
   auth?: Authenticator;
+  /** 使ってよい人。未指定なら環境変数 ALLOWED_GITHUB_IDS。 */
+  allowed: Allowlist;
   /** クイズの大きさを固定する。未指定なら環境変数 QUIZ_PROFILE、それも無ければリポジトリの規模で決める。 */
   profile?: Profile;
-  /** 共有パスワード。未指定なら環境変数 APP_PASSWORD。空なら保護しない。 */
-  accessPassword?: string;
 };
 
 const REPO_ERROR_STATUS = {
@@ -55,6 +54,10 @@ const REPO_ERROR_STATUS = {
 } as const;
 
 export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVariables }> {
+  // 本番(Cloud Run)で認証を付け忘れると、誰でも開発用のユーザーとして使えてしまう
+  if (!partial.auth && process.env.K_SERVICE) {
+    throw new Error("Cloud Run では AUTH=firebase が必要です(開発用の認証は使えません)");
+  }
   const fixedProfile = partial.profile ?? fixedProfileFromEnv();
   const limits = (size: RepoSize) => (fixedProfile ?? profileForSize(size)).limits;
   const deps: Deps = {
@@ -62,6 +65,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     stats: partial.stats ?? new MemoryStatsStore(),
     llm: partial.llm,
     auth: partial.auth,
+    allowed: partial.allowed ?? parseAllowlist(process.env.ALLOWED_GITHUB_IDS),
     profile: fixedProfile,
     listAuthors:
       partial.listAuthors ??
@@ -94,18 +98,15 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     profileForSize(snap.size ?? { files: snap.files.length, bytes: snap.files.reduce((n, f) => n + f.content.length, 0) });
   const getLlm = () => (deps.llm ??= createGeminiClient());
 
-  /** ログインユーザーが作ったセッションは本人にだけ見せる(存在も明かさない)。 */
-  const findSession = async (id: string, user: AuthUser | null) => {
+  /** セッションは作った本人にだけ見せる(存在も明かさない)。ログイン必須にする前の、持ち主のいないセッションも見せない。 */
+  const findSession = async (id: string, user: AuthUser) => {
     const session = await deps.store.get(id);
-    if (session?.uid && session.uid !== user?.uid) return undefined;
-    return session;
+    return session?.uid === user.uid ? session : undefined;
   };
 
   const app = new Hono<{ Variables: AuthVariables }>();
-  const password = partial.accessPassword ?? process.env.APP_PASSWORD;
-  app.use("/api/*", accessPassword(password));
-  app.use("/api/*", authMiddleware(deps.auth));
-  app.get("/api/access", accessCheck(password));
+  // /api/health 以外は、ログインして許可リストに入っている人だけが使える
+  app.use("/api/*", requireUser({ auth: deps.auth, allowed: deps.allowed }));
 
   app.onError((err, c) => {
     if (err instanceof RepoError) {
@@ -120,8 +121,15 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
 
   app.get("/api/health", (c) => c.json({ ok: true }));
 
+  // ログインした直後に、使ってよい人かどうかを画面が確かめる
+  app.get("/api/me", (c) => c.json({ githubId: c.get("user").githubId }));
+
+  /** 回数はアカウントごとに数える(学校や会社では、全員が同じ IP アドレスになることがあるため)。 */
+  const perUser = (limit: number) =>
+    rateLimit<{ Variables: AuthVariables }>({ limit, windowMs: 60 * 60 * 1000, key: (c) => c.get("user").uid });
+
   // 入力のたびに呼ばれるので、共有の GitHub トークンを使い切らないように回数を絞る
-  const repoLookup = rateLimit({ limit: Number(process.env.REPO_CHECK_PER_HOUR ?? 300), windowMs: 60 * 60 * 1000 });
+  const repoLookup = perUser(Number(process.env.REPO_CHECK_PER_HOUR ?? 300));
   app.post("/api/repo/check", repoLookup);
   app.post("/api/repo/authors", repoLookup);
   app.post("/api/repo/authors", async (c) => {
@@ -146,8 +154,8 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     });
   });
 
-  // 問題生成・採点は Gemini を呼ぶので、1 クライアントあたりの回数を絞る
-  const expensive = rateLimit({ limit: Number(process.env.RATE_LIMIT_PER_HOUR ?? 10), windowMs: 60 * 60 * 1000 });
+  // 問題生成・採点は Gemini を呼ぶので、1 人あたりの回数を絞る
+  const expensive = perUser(Number(process.env.RATE_LIMIT_PER_HOUR ?? 10));
   app.post("/api/quiz", expensive);
   app.post("/api/quiz/:id/grade", expensive);
   app.post("/api/quiz/:id/retry", expensive);
@@ -165,7 +173,7 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
     const quiz = await generateQuiz(snap, getLlm(), { profile: profileFor(snap), log: (m) => console.log(`[quiz] ${m}`) });
     console.log(`[quiz] done in ${Date.now() - t0}ms`);
     const snippets = snippetsFor(quiz, snap.files);
-    const session = await deps.store.create({ quiz, snippets, author, uid: c.get("user")?.uid });
+    const session = await deps.store.create({ quiz, snippets, author, uid: c.get("user").uid });
     return c.json({ sessionId: session.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });
   });
 
@@ -209,16 +217,14 @@ export function createApp(partial: Partial<Deps> = {}): Hono<{ Variables: AuthVa
         ? await generateSimilarQuiz(snap, getLlm(), missed, { asked, log })
         : await generateQuiz(snap, getLlm(), { profile: profileFor(snap).name === "tiny" ? PROFILES.tiny : PROFILES.mini, asked, log });
     const snippets = snippetsFor(quiz, snap.files);
-    const next = await deps.store.create({ quiz, snippets, asked, author: session.author, uid: c.get("user")?.uid });
+    const next = await deps.store.create({ quiz, snippets, asked, author: session.author, uid: c.get("user").uid });
     return c.json({ sessionId: next.id, repo: quiz.repo, questions: toPublicQuestions(quiz, snippets) });
   });
 
-  // ログインユーザーの過去の結果から苦手カテゴリを出す
-  app.get("/api/weakness", async (c) => {
-    const user = c.get("user");
-    if (!user) return c.json({ error: "unauthorized", message: "ログインが必要です" }, 401);
-    return c.json(analyzeWeakness(await deps.store.listResultsByUid(user.uid, 20)));
-  });
+  // ログインしている人の過去の結果から苦手カテゴリを出す
+  app.get("/api/weakness", async (c) =>
+    c.json(analyzeWeakness(await deps.store.listResultsByUid(c.get("user").uid, 20))),
+  );
 
   app.get("/api/stats", async (c) => c.json(await deps.stats.get()));
 

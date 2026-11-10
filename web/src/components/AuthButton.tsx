@@ -1,36 +1,16 @@
-import { useState } from "react";
 import { useAuth } from "../auth";
 
+/** ログインしている人の名前とログアウト。開発用(ログインなし)では出さない。 */
 export function AuthButton() {
-  const { enabled, user, login, logout } = useAuth();
-  const [error, setError] = useState<string | null>(null);
-
-  if (!enabled) return null;
-
-  const handleLogin = async () => {
-    setError(null);
-    try {
-      await login();
-    } catch {
-      setError("ログインできませんでした");
-    }
-  };
+  const { enabled, user, logout } = useAuth();
+  if (!enabled || !user) return null;
 
   return (
     <div className="auth">
-      {user ? (
-        <>
-          <span className="muted">{user.displayName ?? "ログイン中"}</span>
-          <button className="link" onClick={logout}>
-            ログアウト
-          </button>
-        </>
-      ) : (
-        <button className="link" onClick={handleLogin}>
-          GitHub でログイン(非公開リポジトリ用)
-        </button>
-      )}
-      {error && <span className="error">{error}</span>}
+      <span className="muted">{user.displayName ?? "ログイン中"}</span>
+      <button className="link" onClick={logout}>
+        ログアウト
+      </button>
     </div>
   );
 }

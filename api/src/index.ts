@@ -8,21 +8,23 @@ try {
 }
 
 import { createApp } from "./app.js";
-import { FirebaseAuthenticator } from "./auth.js";
+import { authFromEnv, parseAllowlist } from "./auth.js";
 import { FirestoreSessionStore, FirestoreStatsStore } from "./store/firestore.js";
 
 // STORE=firestore のとき Firestore に保存する。未指定ならメモリ(ローカル開発用)。
 const useFirestore = process.env.STORE === "firestore";
-// AUTH=firebase のとき Firebase ID token を検証してログインユーザーを扱う。
-const auth = process.env.AUTH === "firebase" ? new FirebaseAuthenticator() : undefined;
+// AUTH=firebase のとき Firebase ID token を検証する。未指定なら開発用で、全員を同じユーザーとして扱う。
+const auth = authFromEnv();
+const allowed = parseAllowlist(process.env.ALLOWED_GITHUB_IDS);
+if (auth && allowed.size === 0) console.warn("ALLOWED_GITHUB_IDS が空なので、誰もログインして使えません");
 
 const app = createApp({
   auth,
+  allowed,
   ...(useFirestore ? { store: new FirestoreSessionStore(), stats: new FirestoreStatsStore() } : {}),
 });
 const port = Number(process.env.PORT ?? 8080);
+const authLabel = auth ? `firebase, allowed: ${allowed.size}` : "dev";
 serve({ fetch: app.fetch, port }, () =>
-  console.log(
-    `api listening on :${port} (store: ${useFirestore ? "firestore" : "memory"}, auth: ${auth ? "firebase" : "off"})`,
-  ),
+  console.log(`api listening on :${port} (store: ${useFirestore ? "firestore" : "memory"}, auth: ${authLabel})`),
 );

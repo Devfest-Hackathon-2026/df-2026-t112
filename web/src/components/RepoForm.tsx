@@ -1,6 +1,9 @@
+import { FirebaseError } from "firebase/app";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, checkRepo, listAuthors } from "../api";
-import { checkDelay, checkFailure, type RepoCheckState } from "../repoCheck";
+import { useAuth } from "../auth";
+import { loginErrorMessage } from "../authStatus";
+import { checkDelay, checkFailure, mayNeedGithubLogin, type RepoCheckState } from "../repoCheck";
 import type { RepoAuthor } from "../types";
 import { Wordmark } from "./Wordmark";
 
@@ -11,7 +14,9 @@ export function RepoForm({ onSubmit, error }: Props) {
   const [check, setCheck] = useState<RepoCheckState>({ state: "idle" });
   const [authors, setAuthors] = useState<RepoAuthor[]>([]);
   const [author, setAuthor] = useState("");
+  const [reconnectError, setReconnectError] = useState<string | null>(null);
   const pasted = useRef(false);
+  const { enabled, hasGithubToken, reconnectGithub } = useAuth();
 
   useEffect(() => {
     const value = url.trim();
@@ -35,7 +40,19 @@ export function RepoForm({ onSubmit, error }: Props) {
       clearTimeout(timer);
       abort.abort();
     };
-  }, [url]);
+    // GitHub でログインし直したら、同じ URL をもう一度確かめる
+  }, [url, hasGithubToken]);
+
+  const reconnect = async () => {
+    setReconnectError(null);
+    try {
+      pasted.current = true; // 取り直したらすぐに確かめ直す
+      await reconnectGithub();
+    } catch (e) {
+      pasted.current = false;
+      setReconnectError(loginErrorMessage(e instanceof FirebaseError ? e.code : undefined));
+    }
+  };
 
   // 読めるリポジトリなら、コミットした人を選べるようにする。取得に失敗しても全体のクイズは作れる
   useEffect(() => {
@@ -88,6 +105,15 @@ export function RepoForm({ onSubmit, error }: Props) {
         {check.state === "ok" && `✓ ${check.name}`}
         {check.state === "error" && check.message}
       </p>
+      {enabled && mayNeedGithubLogin(check, hasGithubToken) && (
+        <p className="reconnect">
+          非公開リポジトリなら、GitHub でログインし直すと読めます。
+          <button type="button" className="link" onClick={reconnect}>
+            ログインし直す
+          </button>
+        </p>
+      )}
+      {reconnectError && <p className="error">{reconnectError}</p>}
       {authors.length > 0 && (
         <div className="scope">
           <label htmlFor="scope-author">出題の範囲</label>

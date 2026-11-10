@@ -364,7 +364,6 @@ describe("API for an author's quiz", () => {
       },
     };
     const app = createApp({
-      accessPassword: "",
       llm,
       store,
       fetchSnapshot: async () => {

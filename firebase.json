@@ -9,5 +9,9 @@
       },
       { "source": "**", "destination": "/index.html" }
     ]
+  },
+  "emulators": {
+    "auth": { "host": "0.0.0.0", "port": 9099 },
+    "ui": { "enabled": false }
   }
 }
