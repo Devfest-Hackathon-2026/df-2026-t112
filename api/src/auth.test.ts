@@ -41,6 +41,11 @@ function setup(extra: Parameters<typeof createApp>[0] = {}) {
       seen.push(userToken);
       return snap;
     },
+    findLogin: async () => "someone",
+    fetchAuthoredSnapshot: async (_url, _login, userToken) => {
+      seen.push(userToken);
+      return snap;
+    },
     ...extra,
   });
   const post = (path: string, headers: Record<string, string> = {}) =>

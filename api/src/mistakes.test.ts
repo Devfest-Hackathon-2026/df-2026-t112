@@ -190,7 +190,7 @@ describe("mistakes API", () => {
         return token === "alice" ? { uid: "alice", githubId: "1" } : token === "bob" ? { uid: "bob", githubId: "2" } : null;
       },
     };
-    const app = createApp({ auth, allowed: parseAllowlist("1 2"), llm, store, mistakes, profile: PROFILES.mini, fetchSnapshot: async () => snap });
+    const app = createApp({ auth, allowed: parseAllowlist("1 2"), llm, store, mistakes, profile: PROFILES.mini, findLogin: async () => "someone", fetchAuthoredSnapshot: async () => snap });
     const call = (path: string, who: string, body?: unknown) =>
       app.request(path, {
         method: body === undefined ? "GET" : "POST",

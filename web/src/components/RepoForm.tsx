@@ -1,27 +1,22 @@
 import { FirebaseError } from "firebase/app";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ApiError, checkRepo, listAuthors } from "../api";
-import { githubIdOf, useAuth } from "../auth";
+import { ApiError, checkRepo } from "../api";
+import { useAuth } from "../auth";
 import { loginErrorMessage } from "../authStatus";
 import { githubAppInstallUrl } from "../githubApp";
-import { accessFrom, checkDelay, checkFailure, findMe, repoHint, type RepoCheckState } from "../repoCheck";
-import type { RepoAuthor } from "../types";
+import { accessFrom, checkDelay, checkFailure, repoHint, type RepoCheckState } from "../repoCheck";
 import { Wordmark } from "./Wordmark";
 
-type Props = { onSubmit: (url: string, author?: string) => void; error?: string | null };
+type Props = { onSubmit: (url: string) => void; error?: string | null };
 
 export function RepoForm({ onSubmit, error }: Props) {
   const [url, setUrl] = useState("");
   const [check, setCheck] = useState<RepoCheckState>({ state: "idle" });
-  /** コミットした人の一覧と、それがどの URL のものか。 */
-  const [authors, setAuthors] = useState<{ url: string; list: RepoAuthor[] } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [reconnectError, setReconnectError] = useState<string | null>(null);
   // 増やすと、同じ URL をもう一度確かめる
   const [recheck, setRecheck] = useState(0);
   const pasted = useRef(false);
-  const { enabled, hasGithubToken, reconnectGithub, user } = useAuth();
-  const githubId = githubIdOf(user);
+  const { enabled, hasGithubToken, reconnectGithub } = useAuth();
 
   useEffect(() => {
     const value = url.trim();
@@ -80,33 +75,13 @@ export function RepoForm({ onSubmit, error }: Props) {
     }
   };
 
-  // 読めるリポジトリなら、本人がコミットしているかを調べる。取得に失敗しても全体のクイズは作れる
-  useEffect(() => {
-    setAuthors(null);
-    if (check.state !== "ok") return;
-    const abort = new AbortController();
-    const value = url.trim();
-    listAuthors(value, abort.signal)
-      .then((r) => {
-        if (!abort.signal.aborted) setAuthors({ url: value, list: r.authors });
-      })
-      .catch(() => {});
-    return () => abort.abort();
-    // url の変化では check が先に idle に戻るので、check だけを追えばよい
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [check]);
-
   const blocked = check.state === "error";
 
-  const handle = async (e: FormEvent) => {
+  const handle = (e: FormEvent) => {
     e.preventDefault();
     const value = url.trim();
-    if (!value || blocked || submitting) return;
-    setSubmitting(true);
-    // 確認が終わる前に押されたときは、ここで本人のコミットを調べる
-    const list = authors?.url === value ? authors.list : await listAuthors(value).then((r) => r.authors).catch(() => []);
-    setSubmitting(false);
-    onSubmit(value, findMe(list, githubId)?.login);
+    if (!value || blocked) return;
+    onSubmit(value);
   };
 
   return (
@@ -172,7 +147,7 @@ export function RepoForm({ onSubmit, error }: Props) {
         </div>
       )}
       {reconnectError && <p className="error">{reconnectError}</p>}
-      <button type="submit" disabled={!url.trim() || blocked || submitting}>
+      <button type="submit" disabled={!url.trim() || blocked}>
         クイズを作る
       </button>
       {error && <p className="error" role="alert">{error}</p>}

@@ -81,16 +81,8 @@ export function App() {
     }
   };
 
-  const start = (url: string, author?: string) =>
-    openQuiz(
-      // 本人の行が見つからなかったら、全体から出題する
-      () => createQuiz(url, author).catch((e) => {
-        if (author && e instanceof ApiError && e.code === "no_authored") return createQuiz(url);
-        throw e;
-      }),
-      { name: "loading", url, message: author ? "あなたが書いたコードから問題を作っています…" : undefined },
-      { name: "input" },
-    );
+  const start = (url: string) =>
+    openQuiz(() => createQuiz(url), { name: "loading", url, message: "あなたが書いたコードから問題を作っています…" }, { name: "input" });
 
   const retry = (session: QuizSession, result: GradeResult) =>
     openQuiz(

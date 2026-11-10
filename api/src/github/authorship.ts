@@ -3,8 +3,6 @@ import { isSourceFile, isTestPath, priority, testQuota, type RepoSize, type Tree
 import { githubClient, type FetchOptions, type LineRange, type RepoSnapshot } from "./snapshot.js";
 import { RepoError, parseRepoUrl } from "./url.js";
 
-export type RepoAuthor = { login: string; githubId: string; commits: number };
-
 /** GitHub API の呼び出しが増えすぎないよう、見るコミットと行単位で調べるファイルを絞る。 */
 const MAX_COMMITS = 30;
 const MAX_BLAME_FILES = 20;
@@ -16,13 +14,7 @@ const CONTEXT_LINES = 20;
 
 const STYLE_RE = /\.(css|scss|sass|less)$/i;
 
-const GITHUB_LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
-
-export function isGithubLogin(value: string): boolean {
-  return GITHUB_LOGIN_RE.test(value);
-}
-
-const NO_AUTHORED = "このユーザーが書いたコードは見つかりませんでした。Git のメールアドレスが GitHub アカウントに紐づいていない可能性もあります";
+const NO_AUTHORED = "このリポジトリには、あなたが書いたコードが見つからないため、問題を作れません。Git のメールアドレスが GitHub アカウントに紐づいていないと、見つからないことがあります";
 
 /** 同時に実行する数を絞って、順に処理する。 */
 async function mapLimited<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -38,15 +30,24 @@ async function mapLimited<T, R>(items: T[], fn: (item: T) => Promise<R>): Promis
   return results;
 }
 
-/** リポジトリにコミットした人の一覧(コミットの多い順)。bot は含めない。 */
-export async function listAuthors(urlInput: string, opts: FetchOptions = {}): Promise<RepoAuthor[]> {
-  const { owner, repo } = parseRepoUrl(urlInput);
-  const client = githubClient(opts);
-  await client.getMeta(owner, repo);
-  const contributors = await client.getJson<{ login?: string; id?: number; type?: string; contributions: number }[]>(
-    `/repos/${owner}/${repo}/contributors?per_page=100`,
+/** GitHub の数字の ID から、今のユーザー名を調べる。 */
+export async function findLogin(githubId: string, opts: FetchOptions = {}): Promise<string> {
+  const user = await githubClient(opts).getJson<{ login: string }>(`/user/${encodeURIComponent(githubId)}`);
+  return user.login;
+}
+
+/** その人のコミット(マージコミットは本人が書いたコードではないので除く)。 */
+async function ownCommits(client: ReturnType<typeof githubClient>, owner: string, repo: string, login: string) {
+  const commits = await client.getJson<{ sha: string; parents: unknown[] }[]>(
+    `/repos/${owner}/${repo}/commits?author=${encodeURIComponent(login)}&per_page=100`,
   );
-  return contributors.flatMap((c) => (c.login && c.type === "User" ? [{ login: c.login, githubId: String(c.id), commits: c.contributions }] : []));
+  return commits.filter((c) => c.parents.length <= 1);
+}
+
+/** その人のコミットがリポジトリに無ければ、no_authored を投げる。 */
+export async function requireOwnCommits(urlInput: string, login: string, opts: FetchOptions = {}): Promise<void> {
+  const { owner, repo } = parseRepoUrl(urlInput);
+  if ((await ownCommits(githubClient(opts), owner, repo, login)).length === 0) throw new RepoError("no_authored", NO_AUTHORED);
 }
 
 type BlameRange = { startingLine: number; endingLine: number; commit: { author: { user: { login: string } | null } | null } };
@@ -133,10 +134,7 @@ export async function fetchAuthoredSnapshot(urlInput: string, login: string, opt
   const client = githubClient(opts);
   const meta = await client.getMeta(owner, repo);
 
-  const commits = await client.getJson<{ sha: string; parents: unknown[] }[]>(
-    `/repos/${owner}/${repo}/commits?author=${encodeURIComponent(login)}&per_page=100`,
-  );
-  const own = commits.filter((c) => c.parents.length <= 1).slice(0, MAX_COMMITS);
+  const own = (await ownCommits(client, owner, repo, login)).slice(0, MAX_COMMITS);
   if (own.length === 0) throw new RepoError("no_authored", NO_AUTHORED);
 
   const details = await mapLimited(own, (c) =>

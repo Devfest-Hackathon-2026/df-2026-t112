@@ -1,5 +1,5 @@
 import { authHeaders } from "./firebase";
-import type { Answers, GradeResult, QuizSession, RepoAuthor, MistakeAnswer, MistakeItem, ResolvedMistakeItem } from "./types";
+import type { Answers, GradeResult, QuizSession, MistakeAnswer, MistakeItem, ResolvedMistakeItem } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -41,11 +41,7 @@ export const getMe = () => request<{ githubId: string }>("/api/me");
 export const checkRepo = (url: string, signal?: AbortSignal) =>
   request<{ owner: string; repo: string; description: string | null }>("/api/repo/check", { url }, signal);
 
-export const listAuthors = (url: string, signal?: AbortSignal) =>
-  request<{ authors: RepoAuthor[] }>("/api/repo/authors", { url }, signal);
-
-/** author を指定すると、その人が書いたコードから出題する。 */
-export const createQuiz = (url: string, author?: string) => request<QuizSession>("/api/quiz", { url, author });
+export const createQuiz = (url: string) => request<QuizSession>("/api/quiz", { url });
 
 export const retryQuiz = (sessionId: string) => request<QuizSession>(`/api/quiz/${sessionId}/retry`, {});
 
