@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Answer, PublicQuestion } from "../types";
 import { CodeBlock } from "./CodeBlock";
+import { RichText } from "./RichText";
 
 type Props = {
   index: number;
@@ -21,7 +22,9 @@ export function QuestionCard({ index, question: q, answer, onChange, disabled }:
             {"★".repeat(q.difficulty)}
           </span>
         </p>
-        <h2 className="question-text">{q.question}</h2>
+        <h2 className="question-text">
+          <RichText text={q.question} />
+        </h2>
       </div>
 
       {q.snippet && (
@@ -48,7 +51,9 @@ export function QuestionCard({ index, question: q, answer, onChange, disabled }:
                 <span className="choice-key" aria-hidden="true">
                   {i + 1}
                 </span>
-                <span>{c}</span>
+                <span className="choice-text">
+                  <RichText text={c} />
+                </span>
               </button>
             ))}
           </div>
@@ -65,7 +70,9 @@ export function QuestionCard({ index, question: q, answer, onChange, disabled }:
 
         <div className="hint">
           {showHint ? (
-            <p className="hint-text">{q.hint}</p>
+            <p className="hint-text">
+              <RichText text={q.hint} />
+            </p>
           ) : (
             <button type="button" className="link" onClick={() => setShowHint(true)}>
               ヒントを見る

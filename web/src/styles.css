@@ -207,12 +207,25 @@ button.block { display: block; width: 100%; }
 .slide { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
 .slide-meta { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
 .stars { color: var(--muted); font-size: 0.8125rem; letter-spacing: 0.05em; }
-.question-text { margin: 0; font-size: 1.25rem; font-weight: 400; line-height: 1.6; white-space: pre-wrap; }
+.question-text { margin: 0; font-size: 1.25rem; font-weight: 400; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* 文章の中のコード。長くても画面からはみ出さないように折り返す */
+.inline-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-variant);
+  border: 1px solid var(--border);
+  font-family: "Roboto Mono", Consolas, Menlo, monospace;
+  font-size: 0.875em;
+  overflow-wrap: anywhere;
+}
+.question-text .code-block, .choice .code-block, .hint-text .code-block, .review summary .code-block { margin: 8px 0; font-size: 0.8125rem; white-space: normal; }
 
 .slide-code { margin: 0; min-width: 0; }
 figcaption { font-size: 0.75rem; color: var(--muted); margin-bottom: 6px; overflow-wrap: anywhere; }
 /* コードは横スクロールせずに読めるよう折り返す。折り返した部分は 2 文字分下げて、続きの行だと分かるようにする */
 .code-block {
+  display: block;
   padding: 12px 16px 12px 12px;
   background: var(--surface-variant);
   color: var(--text);
@@ -278,6 +291,7 @@ button.choice {
 }
 button.choice:hover:not(:disabled) { background: var(--surface-variant); box-shadow: none; }
 button.choice.selected, button.choice.selected:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.choice-text { flex: 1; min-width: 0; }
 .choice-key {
   flex: none;
   width: 24px;
@@ -293,7 +307,7 @@ button.choice.selected, button.choice.selected:hover:not(:disabled) { border-col
 .choice.selected .choice-key { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 
 .hint { margin-top: 12px; font-size: 0.875rem; }
-.hint-text { margin: 0; padding: 12px 16px; background: var(--surface-variant); border-radius: 8px; }
+.hint-text { overflow-wrap: anywhere; margin: 0; padding: 12px 16px; background: var(--surface-variant); border-radius: 8px; }
 
 .quiz-nav {
   position: sticky;
@@ -325,7 +339,7 @@ button.choice.selected, button.choice.selected:hover:not(:disabled) { border-col
 .review { list-style: none; padding: 0; margin: 0; }
 .review li { padding: 12px 0; border-top: 1px solid var(--border); }
 .review li:first-child { border-top: 0; }
-.review summary { cursor: pointer; }
+.review summary { cursor: pointer; overflow-wrap: anywhere; }
 .review .mark { display: inline-block; width: 1.4em; font-weight: 500; }
 .review li.ok .mark { color: var(--success); }
 .review li.ng .mark { color: var(--danger); }

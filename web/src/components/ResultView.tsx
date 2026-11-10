@@ -1,4 +1,5 @@
 import type { GradeResult, QuizSession } from "../types";
+import { RichText } from "./RichText";
 
 type Props = {
   session: QuizSession;
@@ -82,7 +83,7 @@ export function ResultView({ session, result, onRestart, onRetry, error }: Props
                 <details>
                   <summary>
                     <span className="mark">{r.correct ? "○" : r.score > 0 ? "△" : "×"}</span>
-                    Q{entry.no} {entry.q.question}
+                    Q{entry.no} <RichText text={entry.q.question} />
                   </summary>
                   <dl>
                     <dt>あなたの回答</dt>
