@@ -14,7 +14,7 @@ const CONTEXT_LINES = 20;
 
 const STYLE_RE = /\.(css|scss|sass|less)$/i;
 
-const NO_AUTHORED = "このリポジトリには、あなたが書いたコードが見つからないため、問題を作れません。Git のメールアドレスが GitHub アカウントに紐づいていないと、見つからないことがあります";
+const NO_AUTHORED = "このリポジトリには、あなたが書いたコードが見つからないため、問題を作れません。";
 
 /** 同時に実行する数を絞って、順に処理する。 */
 async function mapLimited<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]> {
