@@ -376,7 +376,6 @@ button.choice.selected, button.choice.selected:hover:not(:disabled) { border-col
 .explanation { margin: 4px 0 12px; }
 .explanation strong { color: var(--accent); font-size: 1.25rem; font-weight: 500; }
 
-.scope { margin: 0 0 14px; }
 
 .mistake-result { margin-top: 12px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-variant); overflow-wrap: anywhere; }
 .mistake-result p { margin: 0 0 8px; }
@@ -458,3 +457,22 @@ summary.mistake-question { cursor: pointer; }
   box-shadow: var(--shadow);
 }
 .account-name { margin: 0 0 12px; font-size: 0.875rem; overflow-wrap: anywhere; }
+
+/* 未解決の問題は、行全体を押して解き始める */
+.mistake-list li:has(> .mistake-row) { padding: 0; }
+button.mistake-row {
+  display: block;
+  width: 100%;
+  padding: 14px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-align: left;
+}
+button.mistake-row:hover:not(:disabled) { background: var(--surface-variant); box-shadow: none; }
+.mistake-row .mistake-meta { display: flex; }
+.mistake-row .mistake-question { display: block; }

@@ -76,18 +76,17 @@ export function MistakesView({ onBack }: { onBack: () => void }) {
             <ul className="mistake-list">
               {folder.open.map((m) => (
                 <li key={m.id}>
-                  <p className="mistake-meta">
-                    <span className="status open">未解決</span>
-                    <span className="muted">
-                      {m.repo.owner}/{m.repo.name} ・ {m.wrongCount} 回間違えた
+                  <button type="button" className="mistake-row" onClick={() => setSolving({ item: m, again: false })}>
+                    <span className="mistake-meta">
+                      <span className="status open">未解決</span>
+                      <span className="muted">
+                        {m.repo.owner}/{m.repo.name} ・ {m.wrongCount} 回間違えた
+                      </span>
                     </span>
-                    <button type="button" className="link mistake-again" onClick={() => setSolving({ item: m, again: false })}>
-                      解く
-                    </button>
-                  </p>
-                  <p className="mistake-question">
-                    <RichText text={m.reviewQuestion} />
-                  </p>
+                    <span className="mistake-question">
+                      <RichText text={m.reviewQuestion} />
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>
