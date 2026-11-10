@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, answerMistake, listMistakes } from "../api";
+import { currentReview, currentScreen, pushScreen, type ReviewRef } from "../nav";
 import type { MistakeAnswer, MistakeItem, ResolvedMistakeItem } from "../types";
 import { CodeBlock } from "./CodeBlock";
 import { RichText } from "./RichText";
@@ -9,11 +10,11 @@ const messageOf = (e: unknown) => (e instanceof ApiError ? e.message : "予期�
 type Folder = { open: MistakeItem[]; resolved: ResolvedMistakeItem[] };
 
 /** 間違えた問題のフォルダ。未解決と解決済みを分けて見せ、解く問題を自分で選べる。 */
-export function MistakesView({ onBack }: { onBack: () => void }) {
+export function MistakesView() {
   const [folder, setFolder] = useState<Folder | null>(null);
   const [tab, setTab] = useState<"open" | "resolved">("open");
-  /** 解いている問題。again は解決済みの問題の解き直し。 */
-  const [solving, setSolving] = useState<{ item: MistakeItem; again: boolean } | null>(null);
+  /** 解いている問題。ブラウザの戻るでフォルダに帰れるよう、履歴に合わせる。 */
+  const [reviewing, setReviewing] = useState<ReviewRef | null>(currentReview);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -25,30 +26,33 @@ export function MistakesView({ onBack }: { onBack: () => void }) {
 
   useEffect(load, [load]);
 
-  if (solving) {
-    return (
-      <MistakeReview
-        item={solving.item}
-        again={solving.again}
-        onDone={() => {
-          setSolving(null);
-          load();
-        }}
-      />
-    );
+  useEffect(() => {
+    const onPop = () => {
+      const next = currentReview();
+      setReviewing(next);
+      // 問題からフォルダに帰ったら、解いた結果を一覧に反映する
+      if (!next && currentScreen() === "mistakes") load();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [load]);
+
+  const solve = (item: MistakeItem, again: boolean) => {
+    const review = { id: item.id, again };
+    pushScreen("mistakes", review);
+    setReviewing(review);
+    window.scrollTo({ top: 0 });
+  };
+
+  const solving = reviewing && folder ? [...folder.open, ...folder.resolved].find((m) => m.id === reviewing.id) : undefined;
+  if (reviewing && solving) {
+    return <MistakeReview key={solving.id} item={solving} again={reviewing.again} onDone={() => window.history.back()} />;
   }
 
   if (!folder) {
     return (
       <div className="loading" aria-live="polite">
-        {error ? (
-          <>
-            <p className="error" role="alert">{error}</p>
-            <button className="secondary" onClick={onBack}>戻る</button>
-          </>
-        ) : (
-          <div className="spinner" />
-        )}
+        {error ? <p className="error" role="alert">{error}</p> : <div className="spinner" />}
       </div>
     );
   }
@@ -76,18 +80,17 @@ export function MistakesView({ onBack }: { onBack: () => void }) {
             <ul className="mistake-list">
               {folder.open.map((m) => (
                 <li key={m.id}>
-                  <p className="mistake-meta">
-                    <span className="status open">未解決</span>
-                    <span className="muted">
-                      {m.repo.owner}/{m.repo.name} ・ {m.wrongCount} 回間違えた
+                  <button type="button" className="mistake-row" onClick={() => solve(m, false)}>
+                    <span className="mistake-meta">
+                      <span className="status open">未解決</span>
+                      <span className="muted">
+                        {m.repo.owner}/{m.repo.name} ・ {m.wrongCount} 回間違えた
+                      </span>
                     </span>
-                    <button type="button" className="link mistake-again" onClick={() => setSolving({ item: m, again: false })}>
-                      解く
-                    </button>
-                  </p>
-                  <p className="mistake-question">
-                    <RichText text={m.reviewQuestion} />
-                  </p>
+                    <span className="mistake-question">
+                      <RichText text={m.reviewQuestion} />
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -108,7 +111,7 @@ export function MistakesView({ onBack }: { onBack: () => void }) {
                       <span className="muted">
                         {m.repo.owner}/{m.repo.name} ・ {new Date(m.resolvedAt).toLocaleDateString("ja-JP")}
                       </span>
-                      <button type="button" className="link mistake-again" onClick={() => setSolving({ item: m, again: true })}>
+                      <button type="button" className="link mistake-again" onClick={() => solve(m, true)}>
                         もう一度解く
                       </button>
                     </p>
@@ -135,10 +138,6 @@ export function MistakesView({ onBack }: { onBack: () => void }) {
           )}
         </section>
       )}
-
-      <button className="secondary block mistake-back" onClick={onBack}>
-        戻る
-      </button>
     </div>
   );
 }

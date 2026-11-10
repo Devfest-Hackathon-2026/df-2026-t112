@@ -32,7 +32,15 @@ type PublicQuestion = { id: string; type: "choice" | "free"; choices: string[] }
 
 async function setup() {
   // tiny は選択式 3 問、記述式 1 問
-  const app = createApp({ llm: fakeLlm(), auth, allowed: parseAllowlist("*"), profile: PROFILES.tiny, fetchSnapshot: async () => snap });
+  // クイズは、ログインした本人が書いたコードから作る(#52)
+  const app = createApp({
+    llm: fakeLlm(),
+    auth,
+    allowed: parseAllowlist("*"),
+    profile: PROFILES.tiny,
+    findLogin: async () => "someone",
+    fetchAuthoredSnapshot: async () => snap,
+  });
   const call = (method: string, path: string, user: string, body?: unknown) =>
     app.request(path, {
       method,

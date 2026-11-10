@@ -82,17 +82,16 @@ const app = createApp({
   llm,
   auth: authFromEnv(),
   fetchSnapshot: async () => snapshot,
-  listAuthors: async () => [
-    { login: "mock-user", githubId: "1", commits: 12 },
-    { login: "another-user", githubId: "2", commits: 3 },
-  ],
+  findLogin: async () => "mock-user",
+  requireOwnCommits: async () => {},
   fetchAuthoredSnapshot: async () => ({ ...snapshot, authored: { "src/add.ts": [{ start: 1, end: 6 }] } }),
   // URL に configured を含めると、すでに EVC を入れたアカウントの案内(設定の画面)を試せる
   findRepoAccess: async (url) =>
     url.includes("configured") ? { kind: "configure", url: "https://github.com/settings/installations" } : { kind: "install" },
-  // URL に missing や secret を含めると、入力欄のエラー表示を試せる
+  // URL に missing、secret、stranger を含めると、入力欄のエラー表示を試せる
   checkRepo: async (url) => {
     if (url.includes("missing") || url.includes("configured")) throw new RepoError("not_found", "リポジトリが見つかりません(非公開の可能性もあります)");
+    if (url.includes("stranger")) throw new RepoError("no_authored", "このリポジトリには、あなたが書いたコードが見つからないため、問題を作れません");
     if (url.includes("secret")) throw new RepoError("private", "非公開リポジトリです。GitHub でログインし直すと読めます");
     return { owner: "mock", repo: "calculator", description: null };
   },
