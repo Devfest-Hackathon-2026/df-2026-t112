@@ -7,3 +7,27 @@ dist/
 .firebase/
 .DS_Store
 eval-out/
+
+# 提出用リポジトリの設定
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+*.pem
+*.key
+*.p12
+service-account*.json
+credentials*.json
+google-services.json
+GoogleService-Info.plist
+build/
+out/
+.next/
+.wrangler/
+__pycache__/
+*.pyc
+.venv/
+venv/
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
