@@ -98,8 +98,6 @@ export function RepoForm({ onSubmit, error }: Props) {
 
   const blocked = check.state === "error";
 
-  const me = authors ? findMe(authors.list, githubId) : undefined;
-
   const handle = async (e: FormEvent) => {
     e.preventDefault();
     const value = url.trim();
@@ -174,11 +172,6 @@ export function RepoForm({ onSubmit, error }: Props) {
         </div>
       )}
       {reconnectError && <p className="error">{reconnectError}</p>}
-      {authors && githubId !== undefined && (
-        <p className="muted scope">
-          {me ? `出題の範囲: あなたが書いたコード(${me.commits} コミット)` : "このリポジトリにあなたのコミットが見つからないので、全体から出題します"}
-        </p>
-      )}
       <button type="submit" disabled={!url.trim() || blocked || submitting}>
         クイズを作る
       </button>
