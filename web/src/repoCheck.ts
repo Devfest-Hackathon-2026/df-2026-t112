@@ -1,5 +1,3 @@
-import type { RepoAuthor } from "./types";
-
 /**
  * EVC(GitHub App)にリポジトリを読ませるために開く GitHub の画面(API が調べて返す)。
  * - install: 持ち主のアカウントに、まだ EVC が入っていない
@@ -15,7 +13,7 @@ export type RepoCheckState =
   | { state: "error"; code: string; message: string; access?: RepoAccess };
 
 /** 確実に使えないと分かる失敗。これ以外(GitHub の混雑や通信失敗など)は、確認できなかっただけなので送信を止めない。 */
-const DEFINITE_FAILURES = new Set(["invalid_url", "not_found", "private"]);
+const DEFINITE_FAILURES = new Set(["invalid_url", "not_found", "private", "no_authored"]);
 
 export function checkFailure(code: string, message: string, access?: RepoAccess): RepoCheckState {
   if (!DEFINITE_FAILURES.has(code)) return { state: "idle" };
@@ -55,9 +53,4 @@ export function repoHint(
 /** 打ち込み途中に問い合わせないよう待つ時間。貼り付けのときは待たない。 */
 export function checkDelay(pasted: boolean): number {
   return pasted ? 0 : 500;
-}
-
-/** コミットした人の中から、ログイン中の本人を探す。名前は変えられるので GitHub の数字の ID で比べる。 */
-export function findMe(authors: RepoAuthor[], githubId: string | undefined): RepoAuthor | undefined {
-  return githubId === undefined ? undefined : authors.find((a) => a.githubId === githubId);
 }

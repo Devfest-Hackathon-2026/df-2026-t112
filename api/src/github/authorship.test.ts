@@ -8,8 +8,9 @@ import { MemorySessionStore, type Session } from "../store/session.js";
 import { fakeQuestion, fakeQuizResponse } from "../testing/fake-llm.js";
 import type { LlmClient } from "../llm/client.js";
 import type { GeneratedQuestion } from "../quiz/types.js";
-import { fetchAuthoredSnapshot, fitToBudget, focusOnLines, isGithubLogin, listAuthors, toRanges } from "./authorship.js";
+import { fetchAuthoredSnapshot, findLogin, fitToBudget, focusOnLines, requireOwnCommits, toRanges } from "./authorship.js";
 import { stripComments, stripCommentsWithLines } from "./comments.js";
+import { RepoError } from "./url.js";
 import type { RepoSnapshot } from "./snapshot.js";
 
 type Blame = [start: number, end: number, login: string | null];
@@ -20,7 +21,6 @@ function github(opts: {
   paths?: string[];
   blame?: Record<string, Blame[]>;
   content?: Record<string, string>;
-  contributors?: unknown[];
 }) {
   const calls: string[] = [];
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -37,7 +37,7 @@ function github(opts: {
       return json({ data: { repository: { defaultBranchRef: { target: { blame: { ranges } } } } } });
     }
     if (url.endsWith("/repos/o/r")) return json({ default_branch: "main", description: null, private: false });
-    if (url.includes("/contributors")) return json(opts.contributors ?? []);
+    if (url.endsWith("/user/42")) return json({ login: "alice" });
     if (url.includes("/commits?author=")) return json(opts.commits ?? []);
     const detail = url.match(/\/commits\/(\w+)$/);
     if (detail) return json({ files: opts.changed?.[detail[1]] ?? [] });
@@ -123,23 +123,25 @@ describe("toRanges", () => {
   });
 });
 
-describe("isGithubLogin", () => {
-  it("accepts logins and rejects anything else", () => {
-    expect(isGithubLogin("octo-cat1")).toBe(true);
-    expect(isGithubLogin("../etc")).toBe(false);
-    expect(isGithubLogin("bot[bot]")).toBe(false);
+describe("findLogin", () => {
+  it("turns the numeric id into the current login", async () => {
+    const { fetchImpl } = github({});
+    expect(await findLogin("42", { fetchImpl })).toBe("alice");
   });
 });
 
-describe("listAuthors", () => {
-  it("lists people, not bots", async () => {
-    const { fetchImpl } = github({
-      contributors: [
-        { login: "alice", id: 42, type: "User", contributions: 9 },
-        { login: "dependabot[bot]", type: "Bot", contributions: 50 },
-      ],
-    });
-    expect(await listAuthors("github.com/o/r", { fetchImpl })).toEqual([{ login: "alice", githubId: "42", commits: 9 }]);
+describe("requireOwnCommits", () => {
+  it("passes when the person has a commit", async () => {
+    const { fetchImpl } = github({ commits: [commit("aaa")] });
+    await expect(requireOwnCommits("github.com/o/r", "alice", { fetchImpl })).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["no commits", []],
+    ["only merge commits", [commit("aaa", 2)]],
+  ])("rejects someone with %s", async (_name, commits) => {
+    const { fetchImpl } = github({ commits });
+    await expect(requireOwnCommits("github.com/o/r", "alice", { fetchImpl })).rejects.toMatchObject({ code: "no_authored" });
   });
 });
 
@@ -349,12 +351,15 @@ describe("findOutsideAuthored", () => {
 });
 
 describe("API for an author's quiz", () => {
-  function setup() {
+  function setup(opts: { stranger?: boolean; login?: boolean } = {}) {
     const store = new MemorySessionStore();
     const authoredCalls: [string, string][] = [];
+    const checkedLogins: string[] = [];
+    let llmCalls = 0;
     let wholeCalls = 0;
     const llm: LlmClient = {
       async generateJson(req) {
+        llmCalls++;
         if (req.system.includes("このリクエストで作る問題")) {
           const response = fakeQuizResponse(req.system);
           for (const item of response.questions) item.codeRef = { path: "src/a.ts", startLine: 2, endLine: 3 };
@@ -366,51 +371,78 @@ describe("API for an author's quiz", () => {
     const app = createApp({
       llm,
       store,
+      // login: false は開発用(ログインなし)
+      ...(opts.login === false ? {} : { auth: { verify: async () => ({ uid: "u1", githubId: "1" }) }, allowed: { has: () => true, size: "all" as const } }),
       fetchSnapshot: async () => {
         wholeCalls++;
         return { ...authoredSnap, authored: undefined };
       },
       fetchAuthoredSnapshot: async (url, login) => {
         authoredCalls.push([url, login]);
+        if (opts.stranger) throw new RepoError("no_authored", "見つかりません");
         return authoredSnap;
       },
-      listAuthors: async () => [{ login: "alice", githubId: "1", commits: 3 }],
+      checkRepo: async () => ({ owner: "o", repo: "r", description: null }),
+      findLogin: async (githubId) => (githubId === "1" ? "alice" : "someone"),
+      requireOwnCommits: async (_url, login) => {
+        checkedLogins.push(login);
+        if (opts.stranger) throw new RepoError("no_authored", "見つかりません");
+      },
     });
     const post = (path: string, body: unknown = {}) =>
-      app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    return { post, store, authoredCalls, wholes: () => wholeCalls };
+      app.request(path, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer t" }, body: JSON.stringify(body) });
+    return { post, store, authoredCalls, checkedLogins, llmCalls: () => llmCalls, wholes: () => wholeCalls };
   }
 
-  it("lists the authors", async () => {
-    const res = await setup().post("/api/repo/authors", { url: "github.com/o/r" });
-    expect(await res.json()).toEqual({ authors: [{ login: "alice", githubId: "1", commits: 3 }] });
-  });
-
-  it("uses the author's code when one is chosen, and remembers them", async () => {
+  it("uses the signed-in person's code and remembers them", async () => {
     const t = setup();
-    const res = await t.post("/api/quiz", { url: "github.com/o/r", author: "alice" });
+    const res = await t.post("/api/quiz", { url: "github.com/o/r" });
     const { sessionId } = (await res.json()) as { sessionId: string };
     expect(t.authoredCalls).toEqual([["github.com/o/r", "alice"]]);
     expect(t.wholes()).toBe(0);
     expect((await t.store.get(sessionId))!.author).toBe("alice");
   });
 
-  it("reads the whole repository when no author is chosen", async () => {
+  it("ignores an author sent by the client", async () => {
     const t = setup();
+    await t.post("/api/quiz", { url: "github.com/o/r", author: "bob" });
+    expect(t.authoredCalls).toEqual([["github.com/o/r", "alice"]]);
+  });
+
+  it("refuses a repository without the person's code, instead of reading the whole of it", async () => {
+    const t = setup({ stranger: true });
+    const res = await t.post("/api/quiz", { url: "github.com/o/r" });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { error: string }).error).toBe("no_authored");
+    expect(t.wholes()).toBe(0);
+    expect(t.llmCalls()).toBe(0);
+  });
+
+  it("tells the URL check when the person has no commits", async () => {
+    const t = setup({ stranger: true });
+    const res = await t.post("/api/repo/check", { url: "github.com/o/r" });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { error: string }).error).toBe("no_authored");
+    expect(t.checkedLogins).toEqual(["alice"]);
+  });
+
+  it("passes the URL check when the person has commits", async () => {
+    const res = await setup().post("/api/repo/check", { url: "github.com/o/r" });
+    expect(await res.json()).toEqual({ owner: "o", repo: "r", description: null });
+  });
+
+  it("reads the whole repository in development, where nobody is signed in", async () => {
+    const t = setup({ login: false });
     await t.post("/api/quiz", { url: "github.com/o/r" });
     expect(t.authoredCalls).toHaveLength(0);
     expect(t.wholes()).toBe(1);
-  });
-
-  it("rejects an invalid author", async () => {
-    const t = setup();
-    expect((await t.post("/api/quiz", { url: "github.com/o/r", author: "../x" })).status).toBe(400);
-    expect(t.authoredCalls).toHaveLength(0);
+    expect((await t.post("/api/repo/check", { url: "github.com/o/r" })).status).toBe(200);
+    expect(t.checkedLogins).toHaveLength(0);
   });
 
   it("stays on the author's code when retrying", async () => {
     const t = setup();
-    const { sessionId } = (await (await t.post("/api/quiz", { url: "github.com/o/r", author: "alice" })).json()) as { sessionId: string };
+    const { sessionId } = (await (await t.post("/api/quiz", { url: "github.com/o/r" })).json()) as { sessionId: string };
     await t.post(`/api/quiz/${sessionId}/grade`, { answers: {} });
     const res = await t.post(`/api/quiz/${sessionId}/retry`);
     expect(res.status).toBe(200);
