@@ -101,7 +101,6 @@ describe("POST /api/quiz/:id/retry", () => {
       },
     };
     const app = createApp({
-      accessPassword: "",
       llm,
       store,
       profile: PROFILES.standard,

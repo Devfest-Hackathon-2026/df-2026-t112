@@ -20,6 +20,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # ログインが必須なので、設定が無いまま API と Web を入れ替えない
+      - name: Check login settings
+        if: ${{ vars.VITE_FIREBASE_API_KEY == '' || vars.VITE_FIREBASE_PROJECT_ID == '' || vars.VITE_FIREBASE_AUTH_DOMAIN == '' }}
+        run: |
+          echo "::error::Actions の変数 VITE_FIREBASE_API_KEY / VITE_FIREBASE_AUTH_DOMAIN / VITE_FIREBASE_PROJECT_ID を設定してください(docs/deploy.md)"
+          exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -46,12 +52,13 @@ jobs:
           flags: >-
             --allow-unauthenticated
             --max-instances=3
-            --set-secrets=GEMINI_API_KEY=gemini-api-key:latest,GITHUB_TOKEN=github-token:latest,APP_PASSWORD=app-password:latest
+            --set-secrets=GEMINI_API_KEY=gemini-api-key:latest,GITHUB_TOKEN=github-token:latest
           env_vars: |
             STORE=firestore
             GEMINI_MODEL=gemini-3-flash-preview
             RATE_LIMIT_PER_HOUR=10
-            AUTH=${{ vars.API_AUTH }}
+            AUTH=firebase
+            ALLOWED_GITHUB_IDS=${{ vars.ALLOWED_GITHUB_IDS }}
 
   web:
     needs: api

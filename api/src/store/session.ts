@@ -6,7 +6,7 @@ export type Session = {
   id: string;
   createdAt: number;
   quiz: Quiz;
-  /** ログインユーザーが作ったセッションの持ち主。匿名なら undefined。 */
+  /** セッションを作った人(Firebase の uid)。ログインを必須にする前に作られたものは undefined。 */
   uid?: string;
   /** 問題ごとの該当コード。 */
   snippets: Record<string, string>;

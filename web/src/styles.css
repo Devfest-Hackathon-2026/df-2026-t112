@@ -154,13 +154,19 @@ button.block { display: block; width: 100%; }
 .url-status.error { color: var(--danger); }
 .hero-help { margin: 20px 0 0; }
 
-/* パスワード */
+/* ログイン */
 .gate { width: 100%; max-width: 400px; margin: auto; padding: 40px; text-align: center; }
 .gate h1 { margin: 0 0 8px; font-size: 1rem; }
 .gate .wordmark { font-size: 2rem; }
 .gate p { margin: 0 0 24px; }
 .gate p[role="alert"] { margin: 8px 0 0; color: var(--danger); font-size: 0.875rem; text-align: left; }
 .gate button { width: 100%; margin-top: 16px; }
+.gate p + p { margin-top: -12px; }
+.gate .gate-id { font-family: "Roboto Mono", Consolas, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
+
+/* 非公開リポジトリを読むために、GitHub でログインし直す案内 */
+.reconnect { margin: -6px 0 14px; color: var(--muted); font-size: 0.875rem; }
+.reconnect button.link { margin-left: 8px; font-size: inherit; }
 
 /* 読み込み中 */
 .loading { margin: auto 0; padding-bottom: 8vh; text-align: center; }

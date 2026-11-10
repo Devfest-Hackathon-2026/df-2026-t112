@@ -23,4 +23,14 @@ describe("rateLimit", () => {
     t = 1001;
     expect((await get(app, "1.1.1.1")).status).toBe(200);
   });
+
+  it("can count by another key, such as the signed-in account", async () => {
+    const app = new Hono();
+    app.use("*", rateLimit({ limit: 1, windowMs: 1000, now: () => 0, key: (c) => c.req.header("x-user") }));
+    app.get("/", (c) => c.text("ok"));
+    const as = (user: string) => app.request("/", { headers: { "x-user": user, "x-forwarded-for": "1.1.1.1" } });
+    expect((await as("alice")).status).toBe(200);
+    expect((await as("alice")).status).toBe(429);
+    expect((await as("bob")).status).toBe(200);
+  });
 });

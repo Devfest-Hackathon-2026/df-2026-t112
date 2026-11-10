@@ -5,6 +5,10 @@
 #
 # リポジトリをマウントするので、ソースを編集すればそのまま反映される。
 # node_modules はホストと混ざらないよう名前付きボリュームに置く。
+#
+# 本番と同じく、ログインしないと使えない。ログインは Firebase Auth のエミュレータで行い、
+# 本物の GitHub アカウントは使わない(ログインの画面で「Add new account」から架空のアカウントを作る)。
+# そのため、非公開リポジトリは読めない。
 
 x-node: &node
   image: node:22-slim
@@ -23,22 +27,50 @@ services:
       sh -c "cmp -s package-lock.json node_modules/.evc-lock
       || (npm ci --no-audit --no-fund && cp package-lock.json node_modules/.evc-lock)"
 
+  # Firebase Auth のエミュレータ。作ったアカウントは auth_data に残る(止めるときに書き出す)
+  auth:
+    image: node:22-slim
+    working_dir: /app
+    # 止める合図を firebase に届けて、アカウントを書き出させる
+    init: true
+    command: >
+      sh -c "test -x /opt/firebase/15.35.0/bin/firebase
+      || npm install -g --prefix /opt/firebase/15.35.0 --no-audit --no-fund firebase-tools@15.35.0;
+      exec /opt/firebase/15.35.0/bin/firebase emulators:start --only auth --project demo-evc
+      --import /data/auth --export-on-exit /data/auth"
+    volumes:
+      - ./firebase.json:/app/firebase.json:ro
+      - firebase_tools:/opt/firebase
+      - auth_data:/data
+
   api:
     <<: *node
     command: sh -c "npm run $${API_SCRIPT} -w api"
     environment:
       API_SCRIPT: ${API_SCRIPT:-dev}
+      AUTH: firebase
+      FIREBASE_AUTH_EMULATOR_HOST: auth:9099
+      GCLOUD_PROJECT: demo-evc
+      # 許可リスト。「まだ使えません」の画面を試すときは、架空のアカウントとは違う ID にする
+      ALLOWED_GITHUB_IDS: ${ALLOWED_GITHUB_IDS:-*}
     ports:
       - "8080:8080"
     depends_on:
       deps:
         condition: service_completed_successfully
+      auth:
+        condition: service_started
 
   web:
     <<: *node
     command: npm run dev -w web -- --host 0.0.0.0
     environment:
       API_URL: http://api:8080
+      AUTH_EMULATOR_URL: http://auth:9099
+      VITE_FIREBASE_API_KEY: demo-api-key
+      VITE_FIREBASE_AUTH_DOMAIN: localhost
+      VITE_FIREBASE_PROJECT_ID: demo-evc
+      VITE_FIREBASE_AUTH_EMULATOR: "true"
     ports:
       - "5173:5173"
     depends_on:
@@ -49,3 +81,5 @@ volumes:
   node_modules:
   api_node_modules:
   web_node_modules:
+  firebase_tools:
+  auth_data:

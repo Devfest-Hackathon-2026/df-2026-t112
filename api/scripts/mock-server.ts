@@ -2,9 +2,12 @@
  * Gemini / GitHub を使わずに UI を確認するための開発用サーバー。
  *
  *   npm run dev:mock -w api
+ *
+ * ログインは本物の API と同じく環境変数 AUTH で決める(未指定なら開発用のユーザーとして扱う)。
  */
 import { serve } from "@hono/node-server";
 import { createApp } from "../src/app.js";
+import { authFromEnv } from "../src/auth.js";
 import type { RepoSnapshot } from "../src/github/snapshot.js";
 import { RepoError } from "../src/github/url.js";
 import type { LlmClient } from "../src/llm/client.js";
@@ -33,7 +36,9 @@ const question = (i: number, type: "choice" | "free"): GeneratedQuestion => ({
   type,
   category: CATEGORIES[i % 5],
   difficulty: ((i % 3) + 1) as 1 | 2 | 3,
-  question: type === "choice" ? `add 関数について正しい説明はどれ?(${i + 1})` : "add 関数が例外を投げる理由と条件を説明してください。",
+  // 同じ問題文だと「過去に出した問題と同じ」として作り直しになるので、番号を付けて毎回変える
+  question:
+    type === "choice" ? `add 関数について正しい説明はどれ?(${i + 1})` : `add 関数が例外を投げる理由と条件を説明してください。(${i + 1})`,
   codeRef: { path: "src/add.ts", startLine: 1, endLine: 6 },
   choices: type === "choice" ? ["2つの数を足す", "2つの数を掛ける", "文字列を連結する", "配列を並べ替える"] : [],
   answerIndex: type === "choice" ? 0 : 0,
@@ -72,6 +77,7 @@ const llm: LlmClient = {
 
 const app = createApp({
   llm,
+  auth: authFromEnv(),
   fetchSnapshot: async () => snapshot,
   listAuthors: async () => [
     { login: "mock-user", commits: 12 },
@@ -81,7 +87,7 @@ const app = createApp({
   // URL に missing や secret を含めると、入力欄のエラー表示を試せる
   checkRepo: async (url) => {
     if (url.includes("missing")) throw new RepoError("not_found", "リポジトリが見つかりません(非公開の可能性もあります)");
-    if (url.includes("secret")) throw new RepoError("private", "非公開リポジトリは対応していません");
+    if (url.includes("secret")) throw new RepoError("private", "非公開リポジトリです。GitHub でログインし直すと読めます");
     return { owner: "mock", repo: "calculator", description: null };
   },
 });

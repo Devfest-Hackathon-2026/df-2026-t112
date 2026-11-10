@@ -82,7 +82,7 @@ describe("POST /api/quiz question count", () => {
     size,
   });
   const count = async (partial: Parameters<typeof createApp>[0]) => {
-    const app = createApp({ accessPassword: "", llm: fakeLlm(), ...partial });
+    const app = createApp({ llm: fakeLlm(), ...partial });
     const res = await app.request("/api/quiz", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: "o/r" }) });
     return ((await res.json()) as { questions: unknown[] }).questions.length;
   };

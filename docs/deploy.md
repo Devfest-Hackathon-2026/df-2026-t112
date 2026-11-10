@@ -22,12 +22,6 @@ printf '%s' "<Gemini API キー>" | gcloud secrets create gemini-api-key --data-
 printf '%s' "<GitHub トークン(public_repo 読み取りのみ)>" | gcloud secrets create github-token --data-file=-
 ```
 
-アクセス用の共有パスワードも入れます。設定すると、画面に入るときにパスワードが必要になり、API も `X-App-Password` ヘッダーなしでは 401 を返します(`/api/health` を除く)。
-
-```sh
-printf '%s' "<決めたパスワード>" | gcloud secrets create app-password --data-file=-
-```
-
 Cloud Run のサービスアカウントに `Secret Manager Secret Accessor` ロールを付けます。
 
 ## 2. Firestore
@@ -42,7 +36,34 @@ gcloud firestore fields ttls update expireAt --collection-group=sessions --enabl
 gcloud projects add-iam-policy-binding <project>   --member=serviceAccount:<service-account> --role=roles/datastore.user
 ```
 
-## 3. API を Cloud Run へ
+## 3. ログイン(GitHub App + Firebase Auth)
+
+API は、GitHub でログインして、許可リストに入っている人だけを受け付けます(`/api/health` を除く)。リポジトリは、ログインした本人の GitHub トークン(user-to-server トークン)で、本人が読めるものだけを読みます。クライアントから installation ID は受け取りません(他人の非公開リポジトリを読めてしまうため)。
+
+1. Firebase コンソールの「プロジェクトの設定」→「全般」→「マイアプリ」で Web アプリを追加し、表示される `firebaseConfig` の `apiKey`、`authDomain`、`projectId`、`appId` を控える。Web のビルドで使う(画面の JS に入る公開の値で、秘密ではない)。
+2. GitHub の Settings → Developer settings → GitHub Apps → New GitHub App で、GitHub App を作る。作ったら Client ID を控え、「Generate a new client secret」で Client secret を作って控える(secret は一度しか表示されない)。
+
+| 項目 | 値 |
+|---|---|
+| Homepage URL | `https://<project>.web.app` |
+| Callback URL | `https://<project>.firebaseapp.com/__/auth/handler`(手順 3 で Firebase の画面に出る URL と同じにする) |
+| Expire user authorization tokens | 付けたまま(トークンは 8 時間で切れ、切れたらログインし直す) |
+| Request user authorization (OAuth) during installation | 付けない |
+| Webhook | Active を外す(使わない) |
+| Repository permissions | `Contents: Read-only` と `Metadata: Read-only` だけ |
+| Account permissions | すべて No access |
+| Where can this GitHub App be installed? | Any account(利用者が、自分の非公開リポジトリに入れられるように) |
+
+3. Firebase コンソールの Authentication →「Sign-in method」で GitHub を有効にし、手順 2 の Client ID と Client secret を入れる。ほかのログイン方法は有効にしない(API は GitHub でのログインだけを受け付ける)。「Settings」→「承認済みドメイン」に、画面を配るドメイン(`<project>.web.app` など)があるかも確かめる。
+4. 使ってよい人の、GitHub の数字の ID を集める(許可リスト)。ユーザー名は変えられ、空いた名前を別の人が取れるため、ID で指定する。
+
+```sh
+gh api users/<ユーザー名> --jq .id
+```
+
+5. 非公開リポジトリを読ませたい利用者は、GitHub App をそのリポジトリにインストールする(`https://github.com/apps/<App の名前>` の Install)。組織のリポジトリは、組織のオーナーの承認が要る。
+
+## 4. API を Cloud Run へ
 
 リポジトリのルートで実行します。
 
@@ -52,13 +73,23 @@ gcloud run deploy evc-api \
   --region asia-northeast1 \
   --allow-unauthenticated \
   --max-instances 3 \
-  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,GITHUB_TOKEN=github-token:latest,APP_PASSWORD=app-password:latest \
-  --set-env-vars STORE=firestore,GEMINI_MODEL=gemini-3-flash-preview,RATE_LIMIT_PER_HOUR=10
+  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,GITHUB_TOKEN=github-token:latest \
+  --set-env-vars "STORE=firestore,GEMINI_MODEL=gemini-3-flash-preview,RATE_LIMIT_PER_HOUR=10,AUTH=firebase,ALLOWED_GITHUB_IDS=<ID> <ID>"
 ```
 
-`--source .` はルートの `Dockerfile` を使います。
+- `--source .` はルートの `Dockerfile` を使います。
+- `AUTH=firebase` が無いと、API は起動しません(開発用の認証のまま動いて、誰でも使えてしまうのを防ぐため)。
+- `ALLOWED_GITHUB_IDS` はスペースで区切ります(カンマは `--set-env-vars` の区切りと重なるため)。`*` にすると、GitHub でログインした人なら誰でも使えます。空にすると、誰も使えません。
 
-## 4. Web を Hosting へ
+許可リストに人を足すときは、全員分の ID を入れ直します。GitHub Actions でデプロイしている場合は、変数 `ALLOWED_GITHUB_IDS` も同じ値に変えます(変えないと、次のデプロイで元に戻ります)。
+
+```sh
+gcloud run services update evc-api --region asia-northeast1 --update-env-vars "ALLOWED_GITHUB_IDS=<ID> <ID> <新しい ID>"
+```
+
+## 5. Web を Hosting へ
+
+ビルドのときに `VITE_FIREBASE_*`(`.env.example` 参照)が必要です。無いと、画面に「ログインの設定がありません」と出ます。
 
 ```sh
 npm ci
@@ -74,31 +105,13 @@ curl https://<project>.web.app/api/health
 
 ## 注意
 
-- パスワードは API の呼び出しを守ります。Hosting が配る画面の HTML/JS 自体は誰でも取得できます(中身はパスワード入力画面とビルド済みコードのみ)。パスワードはタブを閉じるまでブラウザに保持されます。
-
+- Hosting が配る画面の HTML/JS は誰でも取得できます(中身はログイン画面とビルド済みのコードのみ)。API は、ログインして許可リストに入っている人にしか応えません。
 - `STORE=firestore` を付けないと、セッションと採点結果はインスタンスのメモリに置かれます。Cloud Run が複数インスタンスに分かれると、結果取得が 404 になります。
 - 匿名の全体集計は Firestore の `stats/global` に入り、`GET /api/stats` で読めます。
-- レート制限もインスタンス単位です。厳密な制限が必要なら Cloud Armor などを使ってください。
+- レート制限もインスタンス単位です。回数はアカウントごとに数えます。厳密な制限が必要なら Cloud Armor などを使ってください。
 - `--max-instances` は Gemini の課金を抑えるための上限です。
-
-## 非公開リポジトリ対応(GitHub App + Firebase Auth)
-
-ログインしたユーザー本人の GitHub トークン(user-to-server トークン)で、本人がアクセスできるリポジトリだけを読みます。クライアントから installation ID は受け取りません(他人の非公開リポジトリを読めてしまうため)。
-
-1. GitHub で GitHub App を作る。Repository permissions は `Contents: Read-only` と `Metadata: Read-only` のみ。Callback URL は Firebase が表示する `https://<project>.firebaseapp.com/__/auth/handler`。
-2. Firebase Console の Authentication で GitHub プロバイダを有効にし、GitHub App の Client ID / Client secret を入れる。
-3. 利用者は GitHub App を、読ませたいリポジトリにインストールする。
-4. Web のビルド時に `VITE_FIREBASE_*`(`.env.example` 参照)を設定する。未設定ならログイン機能は表示されない。
-5. Cloud Run に `AUTH=firebase` を追加する。
-
-```sh
-gcloud run services update evc-api --region asia-northeast1 --update-env-vars AUTH=firebase
-```
-
-注意:
-
-- GitHub トークンは `X-GitHub-Token` ヘッダーで API に渡り、保存もログ出力もしません。ブラウザ側もメモリ上にしか持たないため、リロードすると再ログインが必要です。
-- ログインユーザーが作ったセッションは、本人にしか見えません。
+- GitHub トークンは `X-GitHub-Token` ヘッダーで API に渡り、保存もログ出力もしません。ブラウザ側もメモリ上にしか持たないため、リロードすると消えます。そのあと非公開リポジトリを読むには、URL の入力欄の下に出る「ログインし直す」を押します。
+- クイズ(セッション)は、作った本人にしか見えません。ログインを必須にする前に作られた、持ち主のいないセッションは誰にも見えません。
 - サーバー側の `GITHUB_TOKEN` は公開リポジトリ用のレート制限対策です。非公開リポジトリには使われません。
 
 ## GitHub Actions で自動デプロイ
@@ -134,5 +147,5 @@ GitHub の Settings → Secrets and variables → Actions → Variables に次�
 | `GCP_PROJECT_ID` | プロジェクト ID |
 | `GCP_SERVICE_ACCOUNT` | `evc-deployer@<project>.iam.gserviceaccount.com` |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<number>/locations/global/workloadIdentityPools/github/providers/github` |
-| `API_AUTH` | 非公開リポジトリ対応を使うなら `firebase`、使わないなら空 |
-| `VITE_FIREBASE_*` | ログイン機能を使うときだけ |
+| `ALLOWED_GITHUB_IDS` | 使ってよい人の GitHub の数字の ID(スペース区切り)。`*` なら全員 |
+| `VITE_FIREBASE_*` | Firebase の Web の設定(必須。無いとデプロイを止める) |

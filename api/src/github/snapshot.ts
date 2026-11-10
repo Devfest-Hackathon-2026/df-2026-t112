@@ -57,7 +57,7 @@ export function githubClient(opts: FetchOptions) {
 
   const getMeta = async (owner: string, repo: string): Promise<RepoMeta> => {
     const meta = await getJson<RepoMeta>(`/repos/${owner}/${repo}`);
-    if (meta.private && !opts.allowPrivate) throw new RepoError("private", "非公開リポジトリは対応していません");
+    if (meta.private && !opts.allowPrivate) throw new RepoError("private", "非公開リポジトリです。GitHub でログインし直すと読めます");
     return meta;
   };
 

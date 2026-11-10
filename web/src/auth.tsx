@@ -1,76 +1,105 @@
-import { initializeApp } from "firebase/app";
-import {
-  GithubAuthProvider,
-  getAuth,
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-  type Auth,
-  type User,
-} from "firebase/auth";
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { GithubAuthProvider, onAuthStateChanged, reauthenticateWithPopup, signInWithPopup, signOut, type User } from "firebase/auth";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ApiError, getMe } from "./api";
+import { statusFromMe, type AuthStatus } from "./authStatus";
+import { firebaseAuth, forgetGithubToken, hasGithubToken, rememberGithubToken } from "./firebase";
 import { clearProgress } from "./persist";
 
-const config = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string | undefined,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string | undefined,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID as string | undefined,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID as string | undefined,
-};
-
-/** Firebase の設定が無ければログイン機能ごと無効にする(匿名利用のみ)。 */
-const firebaseAuth: Auth | null = config.apiKey && config.projectId ? getAuth(initializeApp(config)) : null;
-
 type AuthState = {
+  status: AuthStatus;
+  /** Firebase の設定があり、ログインできる。無ければ開発用(ログインなし)。 */
   enabled: boolean;
   user: User | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  /** 非公開リポジトリを読むための GitHub トークンを持っているか(リロードすると消える)。 */
+  hasGithubToken: boolean;
+  /** GitHub でログインし直して、トークンを取り直す。 */
+  reconnectGithub: () => Promise<void>;
 };
 
-/** GitHub のアクセストークンはメモリにだけ置く(localStorage には保存しない)。 */
-let githubToken: string | undefined;
-
-/** API リクエストに付ける認証ヘッダー。未ログインなら空。 */
-export async function authHeaders(): Promise<Record<string, string>> {
-  const user = firebaseAuth?.currentUser;
-  if (!user) return {};
-  const headers: Record<string, string> = { Authorization: `Bearer ${await user.getIdToken()}` };
-  if (githubToken) headers["X-GitHub-Token"] = githubToken;
-  return headers;
-}
-
 const Ctx = createContext<AuthState>({
+  status: { state: "loading" },
   enabled: false,
   user: null,
   login: async () => {},
   logout: async () => {},
+  hasGithubToken: false,
+  reconnectGithub: async () => {},
 });
 
 export const useAuth = () => useContext(Ctx);
 
+/** GitHub の数字の ID。許可リストに入れてもらうときに使う。 */
+export const githubIdOf = (user: User | null) => user?.providerData.find((p) => p.providerId === "github.com")?.uid;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [status, setStatus] = useState<AuthStatus>({ state: "loading" });
+  const [tokenHeld, setTokenHeld] = useState(false);
+  // ログインし直したあとに、前の人の確認結果で上書きしないようにする
+  const generation = useRef(0);
 
-  useEffect(() => (firebaseAuth ? onAuthStateChanged(firebaseAuth, setUser) : undefined), []);
+  useEffect(() => {
+    /** 使ってよい人かどうかを API に確かめる。 */
+    const check = async (signedIn: boolean) => {
+      const mine = ++generation.current;
+      let error: string | null = null;
+      try {
+        await getMe();
+      } catch (e) {
+        error = e instanceof ApiError ? e.code : "unknown";
+      }
+      if (mine !== generation.current) return;
+      const next = statusFromMe(error, signedIn);
+      setStatus(next);
+      // API が受け付けないログインは捨てる(エミュレータを作り直したときなど)
+      if (next.state === "signedOut" && firebaseAuth) await signOut(firebaseAuth);
+    };
+
+    if (!firebaseAuth) {
+      void check(false);
+      return;
+    }
+    return onAuthStateChanged(firebaseAuth, (u) => {
+      setUser(u);
+      if (!u) {
+        generation.current++;
+        // 確認で失敗してログアウトしたときは、そのエラーを残す
+        setStatus((s) => (s.state === "signedOut" ? s : { state: "signedOut" }));
+        return;
+      }
+      setStatus({ state: "loading" });
+      void check(true);
+    });
+  }, []);
 
   const value = useMemo<AuthState>(
     () => ({
+      status,
       enabled: firebaseAuth !== null,
       user,
       login: async () => {
         if (!firebaseAuth) return;
-        const result = await signInWithPopup(firebaseAuth, new GithubAuthProvider());
-        githubToken = GithubAuthProvider.credentialFromResult(result)?.accessToken;
+        rememberGithubToken(await signInWithPopup(firebaseAuth, new GithubAuthProvider()));
+        setTokenHeld(hasGithubToken());
       },
       logout: async () => {
-        githubToken = undefined;
+        forgetGithubToken();
+        setTokenHeld(false);
         // 共有の端末で、次の人に前の人のクイズが見えないようにする
         clearProgress();
         if (firebaseAuth) await signOut(firebaseAuth);
       },
+      hasGithubToken: tokenHeld,
+      reconnectGithub: async () => {
+        const current = firebaseAuth?.currentUser;
+        if (!current) return;
+        rememberGithubToken(await reauthenticateWithPopup(current, new GithubAuthProvider()));
+        setTokenHeld(hasGithubToken());
+      },
     }),
-    [user],
+    [status, user, tokenHeld],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
